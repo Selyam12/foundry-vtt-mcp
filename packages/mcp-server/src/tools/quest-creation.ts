@@ -177,6 +177,11 @@ export class QuestCreationTools {
               description:
                 'ID of a specific page to update. If omitted, updates the first text page. Get page IDs from list-journals.',
             },
+            replaceContent: {
+              type: 'boolean',
+              description:
+                'Replace the targeted page content instead of appending an update. Use for corrections, rewrites, or a clean replacement of an existing page.',
+            },
             newPageName: {
               type: 'string',
               description:
@@ -359,6 +364,7 @@ export class QuestCreationTools {
         newContent: z.string().min(1, 'New content is required'),
         updateType: z.enum(['progress', 'completion', 'failure', 'modification']),
         pageId: z.string().optional(),
+        replaceContent: z.boolean().optional(),
         newPageName: z.string().optional(),
       });
 
@@ -423,10 +429,12 @@ export class QuestCreationTools {
         throw new Error('Journal/page exists but has no content to update');
       }
 
-      // Format the update based on type
-      // For specific page updates, use append-style since the page may not have quest HTML structure
+      // Targeted pages normally receive an appended update. A rewrite explicitly replaces
+      // the entire page, while the bridge itself performs the final write either way.
       let updatedContent: string;
-      if (request.pageId) {
+      if (request.pageId && request.replaceContent) {
+        updatedContent = this.formatUpdateContentForFoundry(request.newContent);
+      } else if (request.pageId) {
         const formattedNew = this.formatUpdateContentForFoundry(request.newContent);
         updatedContent = currentContent + formattedNew;
       } else {
