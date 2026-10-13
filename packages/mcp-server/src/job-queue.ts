@@ -253,24 +253,15 @@ export class JobQueue {
     job.attempts += 1;
     job.error = error;
 
-    if (job.attempts >= job.max_attempts) {
-      job.status = 'failed';
-      job.current_stage = JOB_STAGES.FAILED;
-      this.logger.error('Job failed permanently', {
-        jobId,
-        attempts: job.attempts,
-        error,
-      });
-    } else {
-      job.status = 'queued';
-      job.current_stage = JOB_STAGES.QUEUED;
-      this.logger.warn('Job failed, will retry', {
-        jobId,
-        attempts: job.attempts,
-        maxAttempts: job.max_attempts,
-        error,
-      });
-    }
+    // No retry scheduler exists for this in-memory queue. Requeueing here leaves
+    // failures permanently shown as "queued" without another processing attempt.
+    job.status = 'failed';
+    job.current_stage = JOB_STAGES.FAILED;
+    this.logger.error('Job failed', {
+      jobId,
+      attempts: job.attempts,
+      error,
+    });
   }
 
   async cancelJob(jobId: string): Promise<boolean> {
