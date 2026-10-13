@@ -145,6 +145,119 @@ export const TokenUpdateResultSchema = z.object({
   error: z.string().optional(),
 });
 
+export const SceneTokenScopeSchema = z.enum(['none', 'active', 'all']);
+
+export const SetActorArtworkRequestSchema = z
+  .object({
+    actorIdentifier: z.string().min(1),
+    portraitPath: z.string().min(1).optional(),
+    tokenPath: z.string().min(1).optional(),
+    sceneTokenScope: SceneTokenScopeSchema.optional().default('none'),
+  })
+  .refine(data => Boolean(data.portraitPath ?? data.tokenPath), {
+    message: 'At least one of portraitPath or tokenPath is required',
+  })
+  .refine(data => data.sceneTokenScope === 'none' || Boolean(data.tokenPath), {
+    message: 'tokenPath is required when sceneTokenScope is active or all',
+  });
+
+export const SetActorArtworkResultSchema = z.object({
+  success: z.boolean(),
+  partial: z.boolean(),
+  actorId: z.string(),
+  actorName: z.string(),
+  previousPortraitPath: z.string().optional(),
+  previousTokenPath: z.string().optional(),
+  portraitPath: z.string().optional(),
+  tokenPath: z.string().optional(),
+  updatedProperties: z.array(z.string()),
+  sceneTokenScope: SceneTokenScopeSchema,
+  scenesProcessed: z.number(),
+  sceneTokensUpdated: z.number(),
+  errors: z.array(
+    z.object({
+      sceneId: z.string().optional(),
+      sceneName: z.string().optional(),
+      error: z.string(),
+    })
+  ),
+});
+
+export const ActorBiographyFieldSchema = z.enum(['value', 'public']);
+
+export const UpdateActorBiographyRequestSchema = z.object({
+  actorIdentifier: z.string().min(1),
+  biography: z.string(),
+  biographyField: ActorBiographyFieldSchema.optional().default('value'),
+});
+
+export const UpdateActorBiographyResultSchema = z.object({
+  success: z.boolean(),
+  actorId: z.string(),
+  actorName: z.string(),
+  biographyField: ActorBiographyFieldSchema,
+  updatedPath: z.string(),
+  previousBiography: z.string(),
+  biography: z.string(),
+  updated: z.boolean(),
+});
+
+export const DnD5eSpellbookOperationSchema = z.enum(['update', 'remove', 'set-prepared']);
+
+export const DnD5eSpellbookUpdatesSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    img: z.string().min(1).optional(),
+    level: z.number().int().min(0).max(9).optional(),
+    prepared: z.boolean().optional(),
+    preparationMode: z
+      .enum(['prepared', 'always', 'atwill', 'innate', 'pact', 'daily', 'limited'])
+      .optional(),
+    description: z.string().optional(),
+    system: z.record(z.unknown()).optional(),
+  })
+  .refine(data => Object.keys(data).length > 0, {
+    message: 'At least one update field is required',
+  });
+
+export const DnD5eUpdateActorSpellbookRequestSchema = z
+  .object({
+    operation: DnD5eSpellbookOperationSchema,
+    actorIdentifier: z.string().min(1),
+    spellIdentifier: z.string().min(1),
+    prepared: z.boolean().optional(),
+    updates: DnD5eSpellbookUpdatesSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.operation === 'update' && !data.updates) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updates'],
+        message: 'updates is required for operation "update"',
+      });
+    }
+    if (data.operation === 'set-prepared' && typeof data.prepared !== 'boolean') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['prepared'],
+        message: 'prepared is required for operation "set-prepared"',
+      });
+    }
+  });
+
+export const DnD5eUpdateActorSpellbookResultSchema = z.object({
+  success: z.boolean(),
+  operation: DnD5eSpellbookOperationSchema,
+  actorId: z.string(),
+  actorName: z.string(),
+  spellId: z.string(),
+  spellName: z.string(),
+  previousSpell: z.record(z.unknown()).optional(),
+  spell: z.record(z.unknown()).optional(),
+  updatedProperties: z.array(z.string()),
+  removed: z.boolean(),
+});
+
 export const TokenDeleteResultSchema = z.object({
   success: z.boolean(),
   deletedCount: z.number(),

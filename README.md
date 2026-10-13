@@ -113,7 +113,7 @@ Once connected, ask Claude Desktop:
 
 ## Features
 
-- **48 MCP Tools** that allow Claude to interact with Foundry
+- **52 MCP Tools** that allow Claude to interact with Foundry
 - **D&D 5e NPC Creation Suite**: Build complete NPCs from prompts — stat block, attacks, saves, auras, and spellcasting
 - **Mongoose Traveller 2e (mgt2e) Support**: Full actor lifecycle — create/update/delete travellers, NPCs, creatures, and spacecraft with skill shorthand normalisation; creature compendium index with characteristic DMs; weapon-trait enum reference
 - **WFRP4e Support**: Character reading plus editing — update characteristics, wounds, skills and careers, and add or remove items on existing actors
@@ -181,6 +181,10 @@ Once connected, ask Claude Desktop:
 - **46** manage-actors (create / update / delete / place actors; update / delete embedded items — any system)
 - **47** wfrp4e-update-actor (WFRP4e Only)
 - **48** wfrp4e-add-items (WFRP4e Only)
+- **49** set-actor-artwork
+- **50** update-actor-biography
+- **51** dnd5e-update-actor-spellbook (D&D 5e Only)
+- **52** create-scene-from-image
 
 ## Settings
 

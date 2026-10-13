@@ -82,6 +82,7 @@
   - `dnd5e-create-npc` — build a full NPC stat block from scratch (abilities, saves, skills, senses, AC/HP, CR)
   - `dnd5e-add-feature` — one tool with modes: `passive`, `save`, `attack`, `attack-with-save`, `aura`, `spellcasting`, `spells`
   - `dnd5e-add-features-from-compendium` — bulk-import features/spells from compendium packs
+  - `dnd5e-update-actor-spellbook` — update, remove, or prepare/unprepare embedded spell items on an actor
   - Targets the dnd5e activities data model (4.x/5.x)
 
 - **WFRP4e (Warhammer Fantasy Roleplay 4e) System Support** (PR #53 by @nyoung)
