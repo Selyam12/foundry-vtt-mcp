@@ -37,7 +37,8 @@ export class ActorBiographyTools {
             },
             biography: {
               type: 'string',
-              description: 'New biography HTML/text content. Empty string clears the selected biography field.',
+              description:
+                'New biography HTML/text content. Empty string clears the selected biography field.',
             },
             biographyField: {
               type: 'string',

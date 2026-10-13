@@ -122,7 +122,7 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.cancel-map-job`] = this.handleCancelMapJob.bind(this);
     CONFIG.queries[`${modulePrefix}.upload-generated-map`] =
       this.handleUploadGeneratedMap.bind(this);
-    CONFIG.queries[modulePrefix + '.create-scene-from-image'] =
+    CONFIG.queries[`${modulePrefix}.create-scene-from-image`] =
       this.handleCreateSceneFromImage.bind(this);
 
     // Item usage queries
@@ -1324,18 +1324,18 @@ export class QueryHandlers {
     try {
       const gmCheck = this.validateGMAccess();
       if (!gmCheck.allowed) {
-        return { error: "Access denied", success: false };
+        return { error: 'Access denied', success: false };
       }
 
-      const name = typeof data?.scene_name === "string" ? data.scene_name.trim() : "";
-      const imagePath = typeof data?.image_path === "string" ? data.image_path.trim() : "";
-      if (!name) throw new Error("scene_name is required");
-      if (!imagePath) throw new Error("image_path is required");
-      if (imagePath.startsWith("/") || imagePath.includes("..")) {
-        throw new Error("image_path must be a relative Foundry data path");
+      const name = typeof data?.scene_name === 'string' ? data.scene_name.trim() : '';
+      const imagePath = typeof data?.image_path === 'string' ? data.image_path.trim() : '';
+      if (!name) throw new Error('scene_name is required');
+      if (!imagePath) throw new Error('image_path is required');
+      if (imagePath.startsWith('/') || imagePath.includes('..')) {
+        throw new Error('image_path must be a relative Foundry data path');
       }
       if (!/\.(png|jpe?g|webp)$/i.test(imagePath)) {
-        throw new Error("image_path must reference a PNG, JPEG, or WEBP image");
+        throw new Error('image_path must reference a PNG, JPEG, or WEBP image');
       }
 
       const dimension = (value: unknown, fallback: number) => {
@@ -1354,8 +1354,8 @@ export class QueryHandlers {
         height,
         padding: 0.25,
         initial: { x: width / 2, y: height / 2, scale: 1 },
-        backgroundColor: "#999999",
-        grid: { type: 1, size: gridSize, color: "#000000", alpha: 0.2, distance: 5, units: "ft" },
+        backgroundColor: '#999999',
+        grid: { type: 1, size: gridSize, color: '#000000', alpha: 0.2, distance: 5, units: 'ft' },
         tokenVision: true,
         fogExploration: true,
         globalLight: false,
@@ -1371,7 +1371,7 @@ export class QueryHandlers {
         scene: { id: scene.id, name: scene.name, image_path: imagePath, active: scene.active },
       };
     } catch (error: any) {
-      return { error: error.message || "Failed to create scene", success: false };
+      return { error: error.message || 'Failed to create scene', success: false };
     }
   }
 
@@ -1576,10 +1576,7 @@ export class QueryHandlers {
       if (!data.portraitPath && !data.tokenPath) {
         throw new Error('At least one of portraitPath or tokenPath is required');
       }
-      if (
-        data.sceneTokenScope &&
-        !['none', 'active', 'all'].includes(data.sceneTokenScope)
-      ) {
+      if (data.sceneTokenScope && !['none', 'active', 'all'].includes(data.sceneTokenScope)) {
         throw new Error('sceneTokenScope must be one of: none, active, all');
       }
       if (data.sceneTokenScope && data.sceneTokenScope !== 'none' && !data.tokenPath) {
@@ -2260,7 +2257,9 @@ export class QueryHandlers {
 
       return await this.dataAccess.updateActorSpellbook(data);
     } catch (error) {
-      throw new Error(`Failed to update actor spellbook: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Failed to update actor spellbook: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 

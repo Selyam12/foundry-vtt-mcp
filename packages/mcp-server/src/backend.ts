@@ -1662,7 +1662,6 @@ async function startBackend(): Promise<void> {
                   break;
 
                 case 'dnd5e-update-actor-spellbook':
-
                   result = await dnd5eSpellbookTools.handleUpdateActorSpellbook(args);
 
                   break;

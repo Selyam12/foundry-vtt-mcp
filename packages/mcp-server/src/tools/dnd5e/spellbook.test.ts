@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  DnD5eSpellbookTools,
-  DnD5eUpdateActorSpellbookRequestSchema,
-} from './spellbook.js';
+import { DnD5eSpellbookTools, DnD5eUpdateActorSpellbookRequestSchema } from './spellbook.js';
 import * as systemDetection from '../../utils/system-detection.js';
 
 vi.mock('../../utils/system-detection.js', () => ({

@@ -100,7 +100,12 @@ export class DnD5eSpellbookTools {
               properties: {
                 name: { type: 'string', description: 'New spell name' },
                 img: { type: 'string', description: 'New icon path' },
-                level: { type: 'number', minimum: 0, maximum: 9, description: 'Spell level, 0 for cantrip' },
+                level: {
+                  type: 'number',
+                  minimum: 0,
+                  maximum: 9,
+                  description: 'Spell level, 0 for cantrip',
+                },
                 prepared: { type: 'boolean', description: 'Prepared state' },
                 preparationMode: {
                   type: 'string',
@@ -114,7 +119,8 @@ export class DnD5eSpellbookTools {
                 system: {
                   type: 'object',
                   additionalProperties: true,
-                  description: 'Advanced D&D 5e system-data patch, passed through to Foundry DataModel.',
+                  description:
+                    'Advanced D&D 5e system-data patch, passed through to Foundry DataModel.',
                 },
               },
             },
@@ -156,11 +162,7 @@ export class DnD5eSpellbookTools {
 
       return result;
     } catch (error) {
-      this.errorHandler.handleToolError(
-        error,
-        'dnd5e-update-actor-spellbook',
-        'spellbook update'
-      );
+      this.errorHandler.handleToolError(error, 'dnd5e-update-actor-spellbook', 'spellbook update');
     }
   }
 }

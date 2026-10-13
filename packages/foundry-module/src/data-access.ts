@@ -8258,7 +8258,7 @@ export class FoundryDataAccess {
     try {
       let updatedProperties: string[] = [];
       let removed = false;
-      let currentSpell: any | undefined = spell;
+      let currentSpell: any = spell;
 
       if (data.operation === 'remove') {
         await actor.deleteEmbeddedDocuments('Item', [spell.id]);

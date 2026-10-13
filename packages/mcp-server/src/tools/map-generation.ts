@@ -107,16 +107,28 @@ export class MapGenerationTools {
       },
       {
         name: 'create-scene-from-image',
-        description: 'Create a Foundry scene from an existing world image asset; use after external image generation.',
+        description:
+          'Create a Foundry scene from an existing world image asset; use after external image generation.',
         inputSchema: {
           type: 'object',
           properties: {
             scene_name: { type: 'string', description: 'Name of the new Foundry scene' },
-            image_path: { type: 'string', description: 'Relative Foundry data path, for example assets/maps/example.png' },
+            image_path: {
+              type: 'string',
+              description: 'Relative Foundry data path, for example assets/maps/example.png',
+            },
             width: { type: 'number', default: 2048, description: 'Scene width in pixels' },
             height: { type: 'number', description: 'Scene height in pixels; defaults to width' },
-            grid_size: { type: 'number', default: 70, description: 'Pixels per 5-foot grid square' },
-            activate: { type: 'boolean', default: false, description: 'Whether to activate the scene immediately' },
+            grid_size: {
+              type: 'number',
+              default: 70,
+              description: 'Pixels per 5-foot grid square',
+            },
+            activate: {
+              type: 'boolean',
+              default: false,
+              description: 'Whether to activate the scene immediately',
+            },
           },
           required: ['scene_name', 'image_path'],
         },
@@ -165,8 +177,8 @@ export class MapGenerationTools {
 
   async createSceneFromImage(input: any): Promise<any> {
     const safeInput = input ?? {};
-    const sceneName = typeof safeInput.scene_name === 'string' ? safeInput.scene_name.trim()  : '';
-    const imagePath = typeof safeInput.image_path === 'string' ? safeInput.image_path.trim()  : '';
+    const sceneName = typeof safeInput.scene_name === 'string' ? safeInput.scene_name.trim() : '';
+    const imagePath = typeof safeInput.image_path === 'string' ? safeInput.image_path.trim() : '';
     if (!sceneName || !imagePath) {
       return { success: false, error: 'scene_name and image_path are required' };
     }

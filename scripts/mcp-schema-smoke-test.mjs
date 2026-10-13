@@ -6,25 +6,43 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const distDir = path.join(repoRoot, 'packages', 'mcp-server', 'dist');
 
-const fail = (message) => {
+const fail = message => {
   console.error(`\n[MCP Schema Smoke Test] ${message}`);
   process.exit(1);
 };
 
 if (!fs.existsSync(distDir)) {
   fail(
-    `Build output not found at ${distDir}. Run "npm -w @foundry-mcp/server run build" and re-run this test.`,
+    `Build output not found at ${distDir}. Run "npm -w @foundry-mcp/server run build" and re-run this test.`
   );
 }
 
-const importDist = async (relativePath) =>
+const importDist = async relativePath =>
   import(pathToFileURL(path.join(distDir, relativePath)).href);
 
-const [{ config }, { Logger }, { FoundryClient }, { CharacterTools }, { CompendiumTools }, { SceneTools },
-  { ActorCreationTools }, { QuestCreationTools }, { DiceRollTools }, { CampaignManagementTools },
-  { OwnershipTools }, { TokenManipulationTools }, { ActorArtworkTools }, { ActorBiographyTools }, { MapGenerationTools }, { getSystemRegistry },
+const [
+  { config },
+  { Logger },
+  { FoundryClient },
+  { CharacterTools },
+  { CompendiumTools },
+  { SceneTools },
+  { ActorCreationTools },
+  { QuestCreationTools },
+  { DiceRollTools },
+  { CampaignManagementTools },
+  { OwnershipTools },
+  { TokenManipulationTools },
+  { ActorArtworkTools },
+  { ActorBiographyTools },
+  { MapGenerationTools },
+  { getSystemRegistry },
   { DnD5eSpellbookTools },
-  { DnD5eAdapter }, { PF2eAdapter }, { DSA5Adapter }, { CosmereRpgAdapter }] = await Promise.all([
+  { DnD5eAdapter },
+  { PF2eAdapter },
+  { DSA5Adapter },
+  { CosmereRpgAdapter },
+] = await Promise.all([
   importDist('config.js'),
   importDist('logger.js'),
   importDist('foundry-client.js'),
@@ -70,7 +88,11 @@ const tools = [
   ...new ActorArtworkTools({ foundryClient, logger }).getToolDefinitions(),
   ...new ActorBiographyTools({ foundryClient, logger }).getToolDefinitions(),
   ...new DnD5eSpellbookTools({ foundryClient, logger }).getToolDefinitions(),
-  ...new MapGenerationTools({ foundryClient, logger, backendComfyUIHandlers: {} }).getToolDefinitions(),
+  ...new MapGenerationTools({
+    foundryClient,
+    logger,
+    backendComfyUIHandlers: {},
+  }).getToolDefinitions(),
 ];
 
 if (!tools.length) {
@@ -86,24 +108,26 @@ for (const tool of tools) {
 }
 
 const additionalPropertiesFalseCount = objectSchemas.filter(
-  ({ schema }) => schema.additionalProperties === false,
+  ({ schema }) => schema.additionalProperties === false
 ).length;
 
 if (additionalPropertiesFalseCount === objectSchemas.length) {
   fail(
-    'Every tool schema has additionalProperties=false. This indicates schema normalization is forcing strictness globally.',
+    'Every tool schema has additionalProperties=false. This indicates schema normalization is forcing strictness globally.'
   );
 }
 
-const switchSceneSchema = tools.find((tool) => tool.name === 'switch-scene')?.inputSchema;
+const switchSceneSchema = tools.find(tool => tool.name === 'switch-scene')?.inputSchema;
 if (!switchSceneSchema) {
   fail('Expected tool "switch-scene" to be present but it was not found.');
 }
 
 if (switchSceneSchema.additionalProperties === false) {
   fail(
-    'Tool "switch-scene" schema sets additionalProperties=false. This can reject alias parameters like "sceneId" and breaks client compatibility.',
+    'Tool "switch-scene" schema sets additionalProperties=false. This can reject alias parameters like "sceneId" and breaks client compatibility.'
   );
 }
 
-console.log('[MCP Schema Smoke Test] PASS: tool schemas load, use object input, and do not enforce global additionalProperties=false.');
+console.log(
+  '[MCP Schema Smoke Test] PASS: tool schemas load, use object input, and do not enforce global additionalProperties=false.'
+);
