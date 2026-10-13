@@ -6586,6 +6586,435 @@ export class FoundryDataAccess {
   }
 
   /**
+   * Update actor portrait/prototype artwork and optionally existing scene tokens.
+   */
+  async setActorArtwork(data: {
+    actorIdentifier: string;
+    portraitPath?: string;
+    tokenPath?: string;
+    sceneTokenScope: 'none' | 'active' | 'all';
+  }): Promise<any> {
+    this.validateFoundryState();
+
+    const actorPermission = permissionManager.checkWritePermission('modifyActorArtwork', {
+      targetIds: [data.actorIdentifier],
+    });
+    if (!actorPermission.allowed) {
+      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${actorPermission.reason}`);
+    }
+
+    if (data.sceneTokenScope !== 'none') {
+      const scenePermission = permissionManager.checkWritePermission('modifyScene');
+      if (!scenePermission.allowed) {
+        throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${scenePermission.reason}`);
+      }
+      if (data.sceneTokenScope === 'all') {
+        const bulkPermission = permissionManager.checkWritePermission('bulkOperations');
+        if (!bulkPermission.allowed) {
+          throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${bulkPermission.reason}`);
+        }
+      }
+    }
+
+    const actor = this.findActorByExactIdentifier(data.actorIdentifier);
+    if (!actor) {
+      throw new Error(`Actor not found by exact name or ID: "${data.actorIdentifier}"`);
+    }
+
+    const portraitPath = data.portraitPath
+      ? await this.validateAndNormalizeArtworkPath(data.portraitPath)
+      : undefined;
+    const tokenPath = data.tokenPath
+      ? await this.validateAndNormalizeArtworkPath(data.tokenPath)
+      : undefined;
+
+    const previousPortraitPath = actor.img;
+    const previousTokenPath = actor.prototypeToken?.texture?.src;
+    const actorUpdates: Record<string, any> = {};
+    const updatedProperties: string[] = [];
+
+    if (portraitPath && portraitPath !== previousPortraitPath) {
+      actorUpdates.img = portraitPath;
+      updatedProperties.push('img');
+    }
+    if (tokenPath && tokenPath !== previousTokenPath) {
+      actorUpdates['prototypeToken.texture.src'] = tokenPath;
+      updatedProperties.push('prototypeToken.texture.src');
+    }
+
+    const errors: Array<{ sceneId?: string; sceneName?: string; error: string }> = [];
+    let scenesProcessed = 0;
+    let sceneTokensUpdated = 0;
+
+    try {
+      if (Object.keys(actorUpdates).length > 0) {
+        await actor.update(actorUpdates);
+      }
+
+      if (tokenPath && data.sceneTokenScope !== 'none') {
+        const scenes =
+          data.sceneTokenScope === 'active'
+            ? Array.from(game.scenes || []).filter((scene: any) => scene.active)
+            : Array.from(game.scenes || []);
+
+        for (const scene of scenes as any[]) {
+          const tokens = Array.from(scene.tokens || []).filter(
+            (token: any) => token.actorId === actor.id && token.texture?.src !== tokenPath
+          ) as any[];
+          if (tokens.length === 0) continue;
+
+          scenesProcessed += 1;
+          try {
+            await scene.updateEmbeddedDocuments(
+              'Token',
+              tokens.map((token: any) => ({ _id: token.id, 'texture.src': tokenPath }))
+            );
+            sceneTokensUpdated += tokens.length;
+          } catch (error) {
+            errors.push({
+              sceneId: scene.id,
+              sceneName: scene.name,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
+        }
+      }
+
+      const partial = errors.length > 0;
+      const result = {
+        success: !partial,
+        partial,
+        actorId: actor.id,
+        actorName: actor.name,
+        previousPortraitPath,
+        previousTokenPath,
+        ...(portraitPath ? { portraitPath } : {}),
+        ...(tokenPath ? { tokenPath } : {}),
+        updatedProperties,
+        sceneTokenScope: data.sceneTokenScope,
+        scenesProcessed,
+        sceneTokensUpdated,
+        errors,
+      };
+
+      this.auditLog(
+        'setActorArtwork',
+        {
+          actorId: actor.id,
+          updatedProperties,
+          sceneTokenScope: data.sceneTokenScope,
+          scenesProcessed,
+          sceneTokensUpdated,
+        },
+        partial ? 'failure' : 'success',
+        partial ? 'One or more scene token updates failed' : undefined
+      );
+
+      return result;
+    } catch (error) {
+      this.auditLog(
+        'setActorArtwork',
+        { actorId: actor.id, sceneTokenScope: data.sceneTokenScope },
+        'failure',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Replace an actor biography field.
+   */
+  async updateActorBiography(data: {
+    actorIdentifier: string;
+    biography: string;
+    biographyField: 'value' | 'public';
+  }): Promise<any> {
+    this.validateFoundryState();
+
+    const actorPermission = permissionManager.checkWritePermission('modifyActorBiography', {
+      targetIds: [data.actorIdentifier],
+    });
+    if (!actorPermission.allowed) {
+      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${actorPermission.reason}`);
+    }
+
+    const actor = this.findActorByExactIdentifier(data.actorIdentifier);
+    if (!actor) {
+      throw new Error(`Actor not found by exact name or ID: "${data.actorIdentifier}"`);
+    }
+
+    const biographyField = data.biographyField;
+    const updatedPath = `system.details.biography.${biographyField}`;
+    const previousBiography = actor.system?.details?.biography?.[biographyField] ?? '';
+    const updated = previousBiography !== data.biography;
+
+    try {
+      if (updated) {
+        await actor.update({ [updatedPath]: data.biography });
+      }
+
+      const result = {
+        success: true,
+        actorId: actor.id,
+        actorName: actor.name,
+        biographyField,
+        updatedPath,
+        previousBiography,
+        biography: data.biography,
+        updated,
+      };
+
+      this.auditLog(
+        'updateActorBiography',
+        {
+          actorId: actor.id,
+          biographyField,
+          updated,
+        },
+        'success'
+      );
+
+      return result;
+    } catch (error) {
+      this.auditLog(
+        'updateActorBiography',
+        { actorId: actor.id, biographyField },
+        'failure',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Update, remove, or toggle preparation for an embedded D&D 5e spell item.
+   */
+  async updateActorSpellbook(data: {
+    operation: 'update' | 'remove' | 'set-prepared';
+    actorIdentifier: string;
+    spellIdentifier: string;
+    prepared?: boolean;
+    updates?: {
+      name?: string;
+      img?: string;
+      level?: number;
+      prepared?: boolean;
+      preparationMode?: 'prepared' | 'always' | 'atwill' | 'innate' | 'pact' | 'daily' | 'limited';
+      description?: string;
+      system?: Record<string, any>;
+    };
+  }): Promise<any> {
+    this.validateFoundryState();
+
+    if ((game.system as any).id !== 'dnd5e') {
+      throw new Error('updateActorSpellbook requires the dnd5e game system');
+    }
+
+    const actorPermission = permissionManager.checkWritePermission('modifyActorSpellbook', {
+      targetIds: [data.actorIdentifier],
+    });
+    if (!actorPermission.allowed) {
+      throw new Error(`${ERROR_MESSAGES.ACCESS_DENIED}: ${actorPermission.reason}`);
+    }
+
+    const actor = this.findActorByExactIdentifier(data.actorIdentifier);
+    if (!actor) {
+      throw new Error(`Actor not found by exact name or ID: "${data.actorIdentifier}"`);
+    }
+
+    const spell = this.findActorSpellByExactIdentifier(actor, data.spellIdentifier);
+    if (!spell) {
+      throw new Error(
+        `Spell not found by exact name or item ID on actor "${actor.name}": "${data.spellIdentifier}"`
+      );
+    }
+
+    const previousSpell = this.summarizeEmbeddedSpell(spell);
+
+    try {
+      let updatedProperties: string[] = [];
+      let removed = false;
+      let currentSpell: any | undefined = spell;
+
+      if (data.operation === 'remove') {
+        await actor.deleteEmbeddedDocuments('Item', [spell.id]);
+        removed = true;
+        currentSpell = undefined;
+      } else {
+        const updatePayload =
+          data.operation === 'set-prepared'
+            ? { 'system.preparation.prepared': data.prepared }
+            : this.buildSpellUpdatePayload(data.updates || {});
+
+        updatedProperties = Object.keys(updatePayload);
+        if (updatedProperties.length === 0) {
+          throw new Error('No spell update fields were provided');
+        }
+
+        await spell.update(updatePayload);
+        currentSpell = actor.items?.get(spell.id) || spell;
+      }
+
+      const result = {
+        success: true,
+        operation: data.operation,
+        actorId: actor.id,
+        actorName: actor.name,
+        spellId: spell.id,
+        spellName: spell.name,
+        previousSpell,
+        ...(currentSpell ? { spell: this.summarizeEmbeddedSpell(currentSpell) } : {}),
+        updatedProperties,
+        removed,
+      };
+
+      this.auditLog(
+        'updateActorSpellbook',
+        {
+          actorId: actor.id,
+          spellId: spell.id,
+          operation: data.operation,
+          updatedProperties,
+          removed,
+        },
+        'success'
+      );
+
+      return result;
+    } catch (error) {
+      this.auditLog(
+        'updateActorSpellbook',
+        { actorId: actor.id, spellId: spell.id, operation: data.operation },
+        'failure',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+      throw error;
+    }
+  }
+
+  private findActorByExactIdentifier(identifier: string): any {
+    const byId = game.actors?.get(identifier);
+    if (byId) return byId;
+
+    const normalized = identifier.toLowerCase();
+    const exactMatches = Array.from(game.actors || []).filter(
+      (actor: any) => actor.name?.toLowerCase() === normalized
+    );
+    if (exactMatches.length > 1) {
+      throw new Error(`Multiple actors have the exact name "${identifier}"; use an actor ID`);
+    }
+    return exactMatches[0];
+  }
+
+  private findActorSpellByExactIdentifier(actor: any, identifier: string): any {
+    const byId = actor.items?.get(identifier);
+    if (byId) {
+      if (byId.type !== 'spell') {
+        throw new Error(`Embedded item "${identifier}" on actor "${actor.name}" is not a spell`);
+      }
+      return byId;
+    }
+
+    const normalized = identifier.toLowerCase();
+    const exactMatches = Array.from(actor.items || []).filter(
+      (item: any) => item.type === 'spell' && item.name?.toLowerCase() === normalized
+    );
+    if (exactMatches.length > 1) {
+      throw new Error(
+        `Multiple spells named "${identifier}" exist on actor "${actor.name}"; use a spell item ID`
+      );
+    }
+    return exactMatches[0];
+  }
+
+  private buildSpellUpdatePayload(updates: Record<string, any>): Record<string, any> {
+    const payload: Record<string, any> = {};
+
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.img !== undefined) payload.img = updates.img;
+    if (updates.level !== undefined) payload['system.level'] = updates.level;
+    if (updates.prepared !== undefined) payload['system.preparation.prepared'] = updates.prepared;
+    if (updates.preparationMode !== undefined) {
+      payload['system.preparation.mode'] = updates.preparationMode;
+    }
+    if (updates.description !== undefined) {
+      payload['system.description.value'] = updates.description;
+    }
+    if (updates.system && typeof updates.system === 'object') {
+      Object.assign(payload, this.flattenObjectForUpdate(updates.system, 'system'));
+    }
+
+    return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined));
+  }
+
+  private flattenObjectForUpdate(value: Record<string, any>, prefix: string): Record<string, any> {
+    const flattened: Record<string, any> = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      if (nestedValue === undefined) continue;
+      const path = `${prefix}.${key}`;
+      if (
+        nestedValue &&
+        typeof nestedValue === 'object' &&
+        !Array.isArray(nestedValue) &&
+        !(nestedValue instanceof Date)
+      ) {
+        Object.assign(flattened, this.flattenObjectForUpdate(nestedValue, path));
+      } else {
+        flattened[path] = nestedValue;
+      }
+    }
+    return flattened;
+  }
+
+  private summarizeEmbeddedSpell(spell: any): Record<string, any> {
+    return {
+      id: spell.id,
+      name: spell.name,
+      type: spell.type,
+      img: spell.img,
+      system: this.sanitizeData(spell.system || {}),
+    };
+  }
+
+  private async validateAndNormalizeArtworkPath(inputPath: string): Promise<string> {
+    const trimmed = inputPath.trim().replaceAll('\\', '/').replace(/^\/+/, '');
+    if (
+      !trimmed ||
+      trimmed.includes('..') ||
+      /^[a-z]+:\/\//i.test(trimmed) ||
+      !/^(assets|worlds|modules|systems|icons)\//.test(trimmed)
+    ) {
+      throw new Error(`Invalid Foundry artwork path: "${inputPath}"`);
+    }
+
+    const normalized = trimmed.startsWith('assets/')
+      ? `worlds/${game.world.id}/${trimmed}`
+      : trimmed;
+    const separator = normalized.lastIndexOf('/');
+    const directory = normalized.slice(0, separator);
+    const filename = normalized.slice(separator + 1);
+    const FilePickerAPI =
+      (globalThis as any).foundry?.applications?.apps?.FilePicker?.implementation ||
+      (globalThis as any).FilePicker;
+
+    if (!FilePickerAPI?.browse) {
+      throw new Error('Foundry FilePicker API is unavailable');
+    }
+
+    const result = await FilePickerAPI.browse('data', directory);
+    const exists = Array.from(result.files || []).some((file: any) => {
+      const path = String(file).replace(/^\/+/, '');
+      return path === normalized || path.endsWith(`/${filename}`) || path === filename;
+    });
+    if (!exists) {
+      throw new Error(`Artwork file not found: "${normalized}"`);
+    }
+
+    return normalized;
+  }
+
+  /**
    * Delete one or more tokens from the scene
    */
   async deleteTokens(data: { tokenIds: string[] }): Promise<any> {

@@ -141,6 +141,83 @@ export interface TokenUpdateResult {
   error?: string;
 }
 
+export type SceneTokenScope = 'none' | 'active' | 'all';
+
+export interface SetActorArtworkRequest {
+  actorIdentifier: string;
+  portraitPath?: string;
+  tokenPath?: string;
+  sceneTokenScope?: SceneTokenScope;
+}
+
+export interface SetActorArtworkResult {
+  success: boolean;
+  partial: boolean;
+  actorId: string;
+  actorName: string;
+  previousPortraitPath?: string;
+  previousTokenPath?: string;
+  portraitPath?: string;
+  tokenPath?: string;
+  updatedProperties: string[];
+  sceneTokenScope: SceneTokenScope;
+  scenesProcessed: number;
+  sceneTokensUpdated: number;
+  errors: Array<{ sceneId?: string; sceneName?: string; error: string }>;
+}
+
+export type ActorBiographyField = 'value' | 'public';
+
+export interface UpdateActorBiographyRequest {
+  actorIdentifier: string;
+  biography: string;
+  biographyField?: ActorBiographyField;
+}
+
+export interface UpdateActorBiographyResult {
+  success: boolean;
+  actorId: string;
+  actorName: string;
+  biographyField: ActorBiographyField;
+  updatedPath: string;
+  previousBiography: string;
+  biography: string;
+  updated: boolean;
+}
+
+export type DnD5eSpellbookOperation = 'update' | 'remove' | 'set-prepared';
+
+export interface DnD5eSpellbookUpdates {
+  name?: string;
+  img?: string;
+  level?: number;
+  prepared?: boolean;
+  preparationMode?: 'prepared' | 'always' | 'atwill' | 'innate' | 'pact' | 'daily' | 'limited';
+  description?: string;
+  system?: Record<string, unknown>;
+}
+
+export interface DnD5eUpdateActorSpellbookRequest {
+  operation: DnD5eSpellbookOperation;
+  actorIdentifier: string;
+  spellIdentifier: string;
+  prepared?: boolean;
+  updates?: DnD5eSpellbookUpdates;
+}
+
+export interface DnD5eUpdateActorSpellbookResult {
+  success: boolean;
+  operation: DnD5eSpellbookOperation;
+  actorId: string;
+  actorName: string;
+  spellId: string;
+  spellName: string;
+  previousSpell?: Record<string, unknown>;
+  spell?: Record<string, unknown>;
+  updatedProperties: string[];
+  removed: boolean;
+}
+
 export interface TokenDeleteResult {
   success: boolean;
   deletedCount: number;

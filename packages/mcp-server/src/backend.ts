@@ -35,12 +35,15 @@ import { OwnershipTools } from './tools/ownership.js';
 import { MapGenerationTools } from './tools/map-generation.js';
 
 import { TokenManipulationTools } from './tools/token-manipulation.js';
+import { ActorArtworkTools } from './tools/actor-artwork.js';
+import { ActorBiographyTools } from './tools/actor-biography.js';
 
 import { DSA5CharacterCreator } from './systems/dsa5/character-creator.js';
 
 import { DnD5eAddFeatureTool } from './tools/dnd5e/add-feature.js';
 import { DnD5eNpcTools } from './tools/dnd5e/npc.js';
 import { DnD5eFeaturesFromCompendiumTools } from './tools/dnd5e/features.js';
+import { DnD5eSpellbookTools } from './tools/dnd5e/spellbook.js';
 
 const CONTROL_HOST = '127.0.0.1';
 
@@ -1192,6 +1195,7 @@ async function startBackend(): Promise<void> {
   const dnd5eAddFeatureTool              = new DnD5eAddFeatureTool({ foundryClient, logger });
   const dnd5eNpcTools                    = new DnD5eNpcTools({ foundryClient, logger });
   const dnd5eFeaturesFromCompendiumTools = new DnD5eFeaturesFromCompendiumTools({ foundryClient, logger });
+  const dnd5eSpellbookTools              = new DnD5eSpellbookTools({ foundryClient, logger });
 
   const questCreationTools = new QuestCreationTools({ foundryClient, logger });
 
@@ -1202,6 +1206,8 @@ async function startBackend(): Promise<void> {
   const ownershipTools = new OwnershipTools({ foundryClient, logger });
 
   const tokenManipulationTools = new TokenManipulationTools({ foundryClient, logger });
+  const actorArtworkTools = new ActorArtworkTools({ foundryClient, logger });
+  const actorBiographyTools = new ActorBiographyTools({ foundryClient, logger });
 
   // Initialize mapgen-style backend components for map generation
   let mapGenerationJobQueue: any = null;
@@ -1219,10 +1225,16 @@ async function startBackend(): Promise<void> {
       logger,
       config: {
         port: config.comfyui?.port || 31411,
+        host: config.comfyui?.host || '127.0.0.1',
+        installPath: config.comfyui?.installPath,
+        pythonCommand: config.comfyui?.pythonCommand,
       },
     });
 
-    logger.info('Map generation backend components initialized (ComfyUI on localhost:31411)');
+    logger.info('Map generation backend components initialized', {
+      host: config.comfyui?.host || '127.0.0.1',
+      port: config.comfyui?.port || 31411,
+    });
 
     // Auto-start ComfyUI if installed and autoStart is enabled
     if (mapGenerationComfyUIClient && (mapGenerationComfyUIClient as any).config?.autoStart) {
@@ -1413,6 +1425,7 @@ async function startBackend(): Promise<void> {
     ...dnd5eAddFeatureTool.getToolDefinitions(),
     ...dnd5eNpcTools.getToolDefinitions(),
     ...dnd5eFeaturesFromCompendiumTools.getToolDefinitions(),
+    ...dnd5eSpellbookTools.getToolDefinitions(),
 
     ...questCreationTools.getToolDefinitions(),
 
@@ -1423,6 +1436,8 @@ async function startBackend(): Promise<void> {
     ...ownershipTools.getToolDefinitions(),
 
     ...tokenManipulationTools.getToolDefinitions(),
+    ...actorArtworkTools.getToolDefinitions(),
+    ...actorBiographyTools.getToolDefinitions(),
 
     ...mapGenerationTools.getToolDefinitions(),
   ];
@@ -1600,6 +1615,12 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'dnd5e-update-actor-spellbook':
+
+                  result = await dnd5eSpellbookTools.handleUpdateActorSpellbook(args);
+
+                  break;
+
                 // Quest creation tools
 
                 case 'create-quest-journal':
@@ -1670,6 +1691,16 @@ async function startBackend(): Promise<void> {
 
                   break;
 
+                case 'set-actor-artwork':
+                  result = await actorArtworkTools.handleSetActorArtwork(args);
+
+                  break;
+
+                case 'update-actor-biography':
+                  result = await actorBiographyTools.handleUpdateActorBiography(args);
+
+                  break;
+
                 case 'delete-tokens':
                   result = await tokenManipulationTools.handleDeleteTokens(args);
 
@@ -1691,6 +1722,11 @@ async function startBackend(): Promise<void> {
                   break;
 
                 // Map generation tools
+
+                case 'create-scene-from-image':
+                  result = await mapGenerationTools.createSceneFromImage(args);
+
+                  break;
 
                 case 'generate-map':
                   result = await mapGenerationTools.generateMap(args);

@@ -35,6 +35,27 @@ export class PermissionManager {
       settingKey: 'allowWriteOperations',
       requiresGM: false,
     },
+    modifyActorArtwork: {
+      name: 'Modify Actor Artwork',
+      level: PERMISSION_LEVELS.MEDIUM_RISK,
+      description: 'Modify actor portrait and prototype token artwork',
+      settingKey: 'allowWriteOperations',
+      requiresGM: true,
+    },
+    modifyActorBiography: {
+      name: 'Modify Actor Biography',
+      level: PERMISSION_LEVELS.MEDIUM_RISK,
+      description: 'Modify actor biography text',
+      settingKey: 'allowWriteOperations',
+      requiresGM: true,
+    },
+    modifyActorSpellbook: {
+      name: 'Modify Actor Spellbook',
+      level: PERMISSION_LEVELS.MEDIUM_RISK,
+      description: 'Modify embedded spell items on actor sheets',
+      settingKey: 'allowWriteOperations',
+      requiresGM: true,
+    },
     modifyScene: {
       name: 'Modify Scene',
       level: PERMISSION_LEVELS.MEDIUM_RISK,

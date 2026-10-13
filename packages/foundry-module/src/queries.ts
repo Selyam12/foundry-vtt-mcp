@@ -86,6 +86,16 @@ export class QueryHandlers {
       this.handleGetConnectedPlayers.bind(this);
     CONFIG.queries[`${modulePrefix}.findPlayers`] = this.handleFindPlayers.bind(this);
     CONFIG.queries[`${modulePrefix}.findActor`] = this.handleFindActor.bind(this);
+    CONFIG.queries[`${modulePrefix}.setActorArtwork`] = this.handleSetActorArtwork.bind(this);
+    CONFIG.queries[`${modulePrefix}.set-actor-artwork`] = this.handleSetActorArtwork.bind(this);
+    CONFIG.queries[`${modulePrefix}.updateActorBiography`] =
+      this.handleUpdateActorBiography.bind(this);
+    CONFIG.queries[`${modulePrefix}.update-actor-biography`] =
+      this.handleUpdateActorBiography.bind(this);
+    CONFIG.queries[`${modulePrefix}.updateActorSpellbook`] =
+      this.handleUpdateActorSpellbook.bind(this);
+    CONFIG.queries[`${modulePrefix}.update-actor-spellbook`] =
+      this.handleUpdateActorSpellbook.bind(this);
 
     // Token manipulation queries
     CONFIG.queries[`${modulePrefix}.moveToken`] = this.handleMoveToken.bind(this);
@@ -103,6 +113,8 @@ export class QueryHandlers {
     CONFIG.queries[`${modulePrefix}.cancel-map-job`] = this.handleCancelMapJob.bind(this);
     CONFIG.queries[`${modulePrefix}.upload-generated-map`] =
       this.handleUploadGeneratedMap.bind(this);
+    CONFIG.queries[modulePrefix + '.create-scene-from-image'] =
+      this.handleCreateSceneFromImage.bind(this);
 
     // Item usage queries
     CONFIG.queries[`${modulePrefix}.useItem`] = this.handleUseItem.bind(this);
@@ -1121,6 +1133,64 @@ export class QueryHandlers {
   }
 
   /**
+   * Create a Foundry scene from an image already available in the world data.
+   */
+  private async handleCreateSceneFromImage(data: any): Promise<any> {
+    try {
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: "Access denied", success: false };
+      }
+
+      const name = typeof data?.scene_name === "string" ? data.scene_name.trim() : "";
+      const imagePath = typeof data?.image_path === "string" ? data.image_path.trim() : "";
+      if (!name) throw new Error("scene_name is required");
+      if (!imagePath) throw new Error("image_path is required");
+      if (imagePath.startsWith("/") || imagePath.includes("..")) {
+        throw new Error("image_path must be a relative Foundry data path");
+      }
+      if (!/\.(png|jpe?g|webp)$/i.test(imagePath)) {
+        throw new Error("image_path must reference a PNG, JPEG, or WEBP image");
+      }
+
+      const dimension = (value: unknown, fallback: number) => {
+        const parsed = Number(value);
+        return Number.isInteger(parsed) && parsed >= 512 && parsed <= 8192 ? parsed : fallback;
+      };
+      const width = dimension(data?.width, 2048);
+      const height = dimension(data?.height, width);
+      const gridSize = dimension(data?.grid_size, 70);
+
+      const scene = await (globalThis as any).Scene.create({
+        name,
+        img: imagePath,
+        background: { src: imagePath },
+        width,
+        height,
+        padding: 0.25,
+        initial: { x: width / 2, y: height / 2, scale: 1 },
+        backgroundColor: "#999999",
+        grid: { type: 1, size: gridSize, color: "#000000", alpha: 0.2, distance: 5, units: "ft" },
+        tokenVision: true,
+        fogExploration: true,
+        globalLight: false,
+        darkness: 0,
+        navigation: true,
+        active: data?.activate === true,
+        ownership: { default: 2 },
+        walls: [],
+      });
+
+      return {
+        success: true,
+        scene: { id: scene.id, name: scene.name, image_path: imagePath, active: scene.active },
+      };
+    } catch (error: any) {
+      return { error: error.message || "Failed to create scene", success: false };
+    }
+  }
+
+  /**
    * Handle upload of generated map image (for remote Foundry instances)
    * Receives base64-encoded image data and saves it to generated-maps folder
    */
@@ -1294,6 +1364,89 @@ export class QueryHandlers {
     } catch (error) {
       throw new Error(
         `Failed to update token: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Handle actor portrait and prototype token artwork updates.
+   */
+  private async handleSetActorArtwork(data: {
+    actorIdentifier: string;
+    portraitPath?: string;
+    tokenPath?: string;
+    sceneTokenScope?: 'none' | 'active' | 'all';
+  }): Promise<any> {
+    try {
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data?.actorIdentifier) {
+        throw new Error('actorIdentifier is required');
+      }
+      if (!data.portraitPath && !data.tokenPath) {
+        throw new Error('At least one of portraitPath or tokenPath is required');
+      }
+      if (
+        data.sceneTokenScope &&
+        !['none', 'active', 'all'].includes(data.sceneTokenScope)
+      ) {
+        throw new Error('sceneTokenScope must be one of: none, active, all');
+      }
+      if (data.sceneTokenScope && data.sceneTokenScope !== 'none' && !data.tokenPath) {
+        throw new Error('tokenPath is required when sceneTokenScope is active or all');
+      }
+
+      return await this.dataAccess.setActorArtwork({
+        ...data,
+        sceneTokenScope: data.sceneTokenScope || 'none',
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to set actor artwork: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
+   * Handle actor biography updates.
+   */
+  private async handleUpdateActorBiography(data: {
+    actorIdentifier: string;
+    biography: string;
+    biographyField?: 'value' | 'public';
+  }): Promise<any> {
+    try {
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      this.dataAccess.validateFoundryState();
+
+      if (!data?.actorIdentifier) {
+        throw new Error('actorIdentifier is required');
+      }
+      if (typeof data.biography !== 'string') {
+        throw new Error('biography is required and must be a string');
+      }
+      if (data.biographyField && !['value', 'public'].includes(data.biographyField)) {
+        throw new Error('biographyField must be one of: value, public');
+      }
+
+      return await this.dataAccess.updateActorBiography({
+        ...data,
+        biographyField: data.biographyField || 'value',
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to update actor biography: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
       );
     }
   }
@@ -1833,6 +1986,35 @@ export class QueryHandlers {
       return await this.dataAccess.addSpellsToActor(data);
     } catch (error) {
       throw new Error(`Failed to add spells to actor: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async handleUpdateActorSpellbook(data: any): Promise<any> {
+    try {
+      const gmCheck = this.validateGMAccess();
+      if (!gmCheck.allowed) {
+        return { error: 'Access denied', success: false };
+      }
+
+      if (!data.actorIdentifier) {
+        throw new Error('actorIdentifier is required');
+      }
+      if (!data.spellIdentifier) {
+        throw new Error('spellIdentifier is required');
+      }
+      if (!['update', 'remove', 'set-prepared'].includes(data.operation)) {
+        throw new Error('operation must be one of: update, remove, set-prepared');
+      }
+      if (data.operation === 'update' && (!data.updates || typeof data.updates !== 'object')) {
+        throw new Error('updates is required for operation "update"');
+      }
+      if (data.operation === 'set-prepared' && typeof data.prepared !== 'boolean') {
+        throw new Error('prepared is required for operation "set-prepared"');
+      }
+
+      return await this.dataAccess.updateActorSpellbook(data);
+    } catch (error) {
+      throw new Error(`Failed to update actor spellbook: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
