@@ -104,3 +104,7 @@ VISUAL-CONFIRMATION.md
 /MISSING_*.md
 /REGISTRY_*.md
 /TOOL_INVENTORY.md
+
+# ACKS/dnd5e test fixtures (compendium exports; regenerate with test/export-fixtures.cjs) and harness build output
+packages/foundry-module/test/fixtures/
+packages/foundry-module/test/.build/
