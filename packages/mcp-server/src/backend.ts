@@ -51,6 +51,7 @@ import { DnD5eNpcTools } from './tools/dnd5e/npc.js';
 import { DnD5eFeaturesFromCompendiumTools } from './tools/dnd5e/features.js';
 import { DnD5eSpellbookTools } from './tools/dnd5e/spellbook.js';
 import { AcksAddFeatureTool } from './tools/acks/add-feature.js';
+import { AcksFactionTool } from './tools/acks/faction.js';
 
 const CONTROL_HOST = '127.0.0.1';
 
@@ -1218,6 +1219,7 @@ async function startBackend(): Promise<void> {
   const dnd5eSpellbookTools = new DnD5eSpellbookTools({ foundryClient, logger });
 
   const acksAddFeatureTool = new AcksAddFeatureTool({ foundryClient, logger });
+  const acksFactionTool = new AcksFactionTool({ foundryClient, logger });
 
   const questCreationTools = new QuestCreationTools({ foundryClient, logger });
 
@@ -1455,6 +1457,7 @@ async function startBackend(): Promise<void> {
     ...dnd5eFeaturesFromCompendiumTools.getToolDefinitions(),
 
     ...acksAddFeatureTool.getToolDefinitions(),
+    ...acksFactionTool.getToolDefinitions(),
     ...dnd5eSpellbookTools.getToolDefinitions(),
 
     ...questCreationTools.getToolDefinitions(),
@@ -1685,6 +1688,11 @@ async function startBackend(): Promise<void> {
 
                 case 'acks-add-feature':
                   result = await acksAddFeatureTool.handleAddFeature(args);
+
+                  break;
+
+                case 'acks-faction':
+                  result = await acksFactionTool.handleFaction(args);
 
                   break;
 
