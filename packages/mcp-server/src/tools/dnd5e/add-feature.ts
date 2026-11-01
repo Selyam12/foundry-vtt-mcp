@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { FoundryClient } from '../../foundry-client.js';
 import { Logger } from '../../logger.js';
 import { ErrorHandler } from '../../utils/error-handler.js';
-import { detectGameSystem, getCachedSystemId } from '../../utils/system-detection.js';
+import {
+  detectGameSystem,
+  getCachedSystemId,
+  supportsCompendiumImport,
+} from '../../utils/system-detection.js';
 
 // ---------------------------------------------------------------------------
 // Canonical value sets for soft validation (warnings, not errors)
@@ -194,7 +198,8 @@ export class DnD5eAddFeatureTool {
           'cleric/druid/ranger→WIS, sorcerer/warlock/bard/paladin→CHA), sourceRules\n\n' +
           '• spells — import named spells from compendium. Names must be in English.\n' +
           '  Required: actorIdentifier, spellNames (max 50)\n' +
-          '  Optional: compendiumPacks (default ["dnd5e.spells"])\n\n' +
+          '  Optional: compendiumPacks (default ["dnd5e.spells"]; on ACKS the arcane and divine spell packs)\n' +
+          '  Also works on ACKS (spells only; the other feature types are D&D 5e only).\n\n' +
           'Use list-characters or get-character first to find the actorIdentifier.',
 
         inputSchema: {
@@ -447,10 +452,10 @@ export class DnD5eAddFeatureTool {
               type: 'array',
               description:
                 'Compendium pack IDs to search, in priority order (first match wins). ' +
-                'Default: ["dnd5e.spells"] (SRD 2014). Use "dnd5e.spells24" for 2024 rules. ' +
+                'Default: ["dnd5e.spells"] (SRD 2014) on D&D 5e, ["acks.acks-arcane-spells", "acks.acks-divine-spells"] on ACKS. ' +
+                'Use "dnd5e.spells24" for 2024 rules. Omit it to use the system default. ' +
                 'Used by: spells.',
               items: { type: 'string', minLength: 1 },
-              default: ['dnd5e.spells'],
             },
 
             // ── Source metadata ───────────────────────────────────────────────
@@ -1142,12 +1147,12 @@ export class DnD5eAddFeatureTool {
       featureType: z.literal('spells'),
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
       spellNames: z.array(z.string().min(1)).min(1).max(50),
-      compendiumPacks: z.array(z.string().min(1)).default(['dnd5e.spells']),
+      compendiumPacks: z.array(z.string().min(1)).optional(),
     });
 
     const parsed = schema.parse(args);
 
-    this.logger.info('Adding spells to D&D 5e actor', {
+    this.logger.info('Adding spells to actor', {
       actorIdentifier: parsed.actorIdentifier,
       spellCount: parsed.spellNames.length,
       packs: parsed.compendiumPacks,
@@ -1155,9 +1160,9 @@ export class DnD5eAddFeatureTool {
 
     try {
       const system = await detectGameSystem(this.foundryClient, this.logger);
-      if (system !== 'dnd5e') {
+      if (!supportsCompendiumImport(system)) {
         throw new Error(
-          `dnd5e-add-feature (spells) requires D&D 5e. ` +
+          `dnd5e-add-feature (spells) requires D&D 5e or ACKS. ` +
             `Detected system: "${getCachedSystemId() ?? 'unknown'}".`
         );
       }

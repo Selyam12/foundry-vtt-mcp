@@ -779,7 +779,7 @@ export class CompendiumTools {
         criteria: params,
         searchSummary: {
           ...searchSummary,
-          searchStrategy: `Prioritized pack search - ${gameSystem === 'pf2e' ? 'PF2e' : gameSystem === 'cosmere-rpg' ? 'Cosmere RPG' : gameSystem === 'mgt2e' ? 'Mongoose Traveller 2e' : 'D&D 5e'} content first, then modules, then campaign-specific`,
+          searchStrategy: `Prioritized pack search - ${gameSystem === 'pf2e' ? 'PF2e' : gameSystem === 'cosmere-rpg' ? 'Cosmere RPG' : gameSystem === 'mgt2e' ? 'Mongoose Traveller 2e' : gameSystem === 'acks' ? 'ACKS' : 'D&D 5e'} content first, then modules, then campaign-specific`,
           note: 'Packs searched in priority order to find most relevant creatures first',
         },
         optimizationNote:
@@ -1083,7 +1083,25 @@ export class CompendiumTools {
       pack: { id: creature.pack, label: creature.packLabel },
     };
 
-    if (gameSystem === 'cosmere-rpg') {
+    if (gameSystem === 'acks') {
+      // ACKS fields come pre-flattened from the module's ACKS adapter; pass them through.
+      for (const key of [
+        'type',
+        'hd',
+        'hitDice',
+        'hitPoints',
+        'armorClass',
+        'morale',
+        'xp',
+        'alignment',
+        'movement',
+        'attackThrow',
+        'hasSpells',
+        'summary',
+      ]) {
+        if (creature[key] !== undefined) formatted[key] = creature[key];
+      }
+    } else if (gameSystem === 'cosmere-rpg') {
       // Cosmere fields come pre-flattened from data-access.ts; pass them through.
       if (creature.tier !== undefined) formatted.tier = creature.tier;
       if (creature.role) formatted.role = creature.role;
@@ -1215,7 +1233,17 @@ export class CompendiumTools {
   private describeCriteria(params: any, gameSystem: GameSystem): string {
     const parts: string[] = [];
 
-    if (gameSystem === 'dnd5e') {
+    if (gameSystem === 'acks') {
+      if (params.challengeRating !== undefined) {
+        if (typeof params.challengeRating === 'number') {
+          parts.push(`HD ${params.challengeRating}`);
+        } else if (typeof params.challengeRating === 'object') {
+          const min = params.challengeRating.min ?? 0;
+          const max = params.challengeRating.max ?? 30;
+          parts.push(`HD ${min}-${max}`);
+        }
+      }
+    } else if (gameSystem === 'dnd5e') {
       if (params.challengeRating !== undefined) {
         if (typeof params.challengeRating === 'number') {
           parts.push(`CR ${params.challengeRating}`);

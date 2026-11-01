@@ -2,7 +2,11 @@ import { z } from 'zod';
 import { FoundryClient } from '../../foundry-client.js';
 import { Logger } from '../../logger.js';
 import { ErrorHandler } from '../../utils/error-handler.js';
-import { detectGameSystem, getCachedSystemId } from '../../utils/system-detection.js';
+import {
+  detectGameSystem,
+  getCachedSystemId,
+  supportsCompendiumImport,
+} from '../../utils/system-detection.js';
 
 // ---------------------------------------------------------------------------
 // Options interface
@@ -33,7 +37,7 @@ export class DnD5eFeaturesFromCompendiumTools {
       {
         name: 'dnd5e-add-features-from-compendium',
         description:
-          '[D&D 5e only] Import class features and monster features from an official compendium ' +
+          '[D&D 5e and ACKS] Import class features and monster features from an official compendium ' +
           'pack onto an actor (NPC or PC). Each feature is looked up by EXACT name ' +
           '(case-insensitive) and embedded onto the actor as-is from the compendium data.\n\n' +
           'USE THIS TOOL when you need to:\n' +
@@ -53,7 +57,9 @@ export class DnD5eFeaturesFromCompendiumTools {
           '  - Importing 2024 class features — they are embedded inside class items in the 2024 ' +
           'edition, not available in a separate compendium pack; this tool cannot import them\n' +
           '  - Creating custom/homebrew features from scratch → compendium-only, no homebrew\n' +
-          '  - Non-dnd5e systems → this tool is dnd5e-exclusive\n\n' +
+          '  - Systems other than D&D 5e and ACKS\n\n' +
+          'ACKS: default packs are ["acks.acks-monster-abilities", "acks.acks-class-abilities", ' +
+          '"acks.acks-proficiencies"]; names must match the English compendium names.\n\n' +
           'Returns a detailed report: features added ✅, skipped (already on actor) ⏭️, ' +
           'not found in compendium ❌, and failed during import ⚠️.\n' +
           'Use list-characters or get-character first to find the actorIdentifier.',
@@ -77,11 +83,11 @@ export class DnD5eFeaturesFromCompendiumTools {
               type: 'array',
               description:
                 'Compendium pack IDs to search, in priority order (first match wins). ' +
-                'Defaults to ["dnd5e.monsterfeatures", "dnd5e.classfeatures"] (SRD 2014). ' +
+                'Omit it to use the system default: ["dnd5e.monsterfeatures", "dnd5e.classfeatures"] ' +
+                '(SRD 2014) on D&D 5e, the ACKS ability and proficiency packs on ACKS. ' +
                 'Use "dnd5e.monsterfeatures24" for 2024 monster features. ' +
                 'Note: 2024 class features are not available in a separate pack.',
               items: { type: 'string', minLength: 1 },
-              default: ['dnd5e.monsterfeatures', 'dnd5e.classfeatures'],
             },
           },
           required: ['actorIdentifier', 'featureNames'],
@@ -94,14 +100,12 @@ export class DnD5eFeaturesFromCompendiumTools {
     const schema = z.object({
       actorIdentifier: z.string().min(1, 'actorIdentifier cannot be empty'),
       featureNames: z.array(z.string().min(1)).min(1).max(50),
-      compendiumPacks: z
-        .array(z.string().min(1))
-        .default(['dnd5e.monsterfeatures', 'dnd5e.classfeatures']),
+      compendiumPacks: z.array(z.string().min(1)).optional(),
     });
 
     const parsed = schema.parse(args);
 
-    this.logger.info('Adding features to D&D 5e actor from compendium', {
+    this.logger.info('Adding features to actor from compendium', {
       actorIdentifier: parsed.actorIdentifier,
       featureCount: parsed.featureNames.length,
       packs: parsed.compendiumPacks,
@@ -109,9 +113,9 @@ export class DnD5eFeaturesFromCompendiumTools {
 
     try {
       const system = await detectGameSystem(this.foundryClient, this.logger);
-      if (system !== 'dnd5e') {
+      if (!supportsCompendiumImport(system)) {
         throw new Error(
-          `dnd5e-add-features-from-compendium requires D&D 5e. ` +
+          `dnd5e-add-features-from-compendium requires D&D 5e or ACKS. ` +
             `Detected system: "${getCachedSystemId() ?? 'unknown'}".`
         );
       }

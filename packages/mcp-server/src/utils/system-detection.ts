@@ -11,7 +11,23 @@ import { Logger } from '../logger.js';
 /**
  * Supported game systems
  */
-export type GameSystem = 'dnd5e' | 'pf2e' | 'cosmere-rpg' | 'dsa5' | 'wfrp4e' | 'mgt2e' | 'other';
+export type GameSystem =
+  | 'dnd5e'
+  | 'pf2e'
+  | 'cosmere-rpg'
+  | 'dsa5'
+  | 'wfrp4e'
+  | 'mgt2e'
+  | 'acks'
+  | 'other';
+
+/**
+ * Systems supported by the compendium import tools (spells / features by name).
+ * The Foundry module picks the default packs for each system.
+ */
+export function supportsCompendiumImport(system: GameSystem): boolean {
+  return system === 'dnd5e' || system === 'acks';
+}
 
 /**
  * Cache for system detection (avoid repeated queries)
@@ -53,6 +69,8 @@ export async function detectGameSystem(
       cachedSystem = 'dsa5';
     } else if (systemId === 'wfrp4e') {
       cachedSystem = 'wfrp4e';
+    } else if (systemId === 'acks') {
+      cachedSystem = 'acks';
     } else {
       cachedSystem = 'other';
     }
