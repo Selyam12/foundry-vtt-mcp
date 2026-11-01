@@ -118,3 +118,17 @@ export async function loadBridge() {
   }
   return import(pathToFileURL(path.join(out, 'data-access.js')).href + '?t=' + Date.now());
 }
+
+/**
+ * Load the module's query layer (what the MCP server actually calls) and return
+ * the registered handlers, keyed by method name without the module prefix.
+ * Call after loadBridge() (which builds test/.build) and bootFakeFoundry().
+ */
+export async function loadQueryHandlers() {
+  const out = path.join(here, '.build');
+  globalThis.CONFIG.queries = {};
+  const mod = await import(pathToFileURL(path.join(out, 'queries.js')).href + '?t=' + Date.now());
+  new mod.QueryHandlers().registerHandlers();
+  const prefix = 'foundry-mcp-bridge.';
+  return new Proxy({}, { get: (_t, name) => globalThis.CONFIG.queries[prefix + String(name)] });
+}

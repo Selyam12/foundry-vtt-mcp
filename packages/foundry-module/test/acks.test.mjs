@@ -1,6 +1,6 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { bootFakeFoundry, loadBridge } from './fake-foundry.mjs';
+import { bootFakeFoundry, loadBridge, loadQueryHandlers } from './fake-foundry.mjs';
 
 let da, game;
 before(async () => {
@@ -135,4 +135,22 @@ test('ACKS: createActorFromCompendiumEntry puts actors in the requested folder, 
   // a blank folder name falls back to the default
   await da.createActorFromCompendiumEntry({ packId: w.pack, itemId: w.id, customNames: ['Wight dossier vide'], folder: '   ' });
   assert.equal(folderNameOf('Wight dossier vide'), 'Foundry MCP Creatures');
+});
+
+test('ACKS: the createActorFromCompendium query forwards the folder parameter', async () => {
+  // Goes through the query layer the MCP server calls, which rebuilds the request
+  // field by field (a field missing there is silently dropped).
+  const handlers = await loadQueryHandlers();
+  const idx = await da.getEnhancedCreatureIndex();
+  const w = idx.find(c => c.name === 'Wight');
+  const folderNameOf = actorName => {
+    const actor = [...game.actors.values()].find(a => a.name === actorName);
+    return game.folders.get(actor._source.folder)?.name;
+  };
+
+  await handlers.createActorFromCompendium({ packId: w.pack, itemId: w.id, customNames: ['Wight via requête'], folder: 'Dossier via requête' });
+  assert.equal(folderNameOf('Wight via requête'), 'Dossier via requête');
+
+  await handlers.createActorFromCompendium({ packId: w.pack, itemId: w.id, customNames: ['Wight via requête défaut'] });
+  assert.equal(folderNameOf('Wight via requête défaut'), 'Foundry MCP Creatures');
 });

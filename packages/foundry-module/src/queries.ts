@@ -499,6 +499,7 @@ export class QueryHandlers {
     customNames?: string[] | undefined;
     quantity?: number | undefined;
     addToScene?: boolean | undefined;
+    folder?: string | undefined;
     placement?:
       | {
           type: 'random' | 'grid' | 'center' | 'coordinates';
@@ -523,6 +524,10 @@ export class QueryHandlers {
         quantity: data.quantity || 1,
         addToScene: data.addToScene || false,
       };
+
+      if (data.folder) {
+        requestData.folder = data.folder;
+      }
 
       if (data.placement) {
         requestData.placement = data.placement;
