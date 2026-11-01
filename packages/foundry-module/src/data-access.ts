@@ -7901,8 +7901,19 @@ export class FoundryDataAccess {
     }
 
     const biographyField = data.biographyField;
-    const updatedPath = `system.details.biography.${biographyField}`;
-    const previousBiography = actor.system?.details?.biography?.[biographyField] ?? '';
+    // dnd5e-style systems store { value, public }; others (e.g. ACKS) store one plain string.
+    const currentBiography = actor.system?.details?.biography;
+    const isFlatBiography = typeof currentBiography === 'string';
+    if (isFlatBiography && biographyField === 'public') {
+      throw new Error(
+        `The "${(game.system as any)?.id}" game system has a single biography field; use biographyField "value".`
+      );
+    }
+    const updatedPath = isFlatBiography
+      ? 'system.details.biography'
+      : `system.details.biography.${biographyField}`;
+    const previousBiography =
+      (isFlatBiography ? currentBiography : currentBiography?.[biographyField]) ?? '';
     const updated = previousBiography !== data.biography;
 
     try {

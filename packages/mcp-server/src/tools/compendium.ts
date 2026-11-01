@@ -1101,6 +1101,8 @@ export class CompendiumTools {
       ]) {
         if (creature[key] !== undefined) formatted[key] = creature[key];
       }
+      formatted.flags = { spellcaster: !!creature.hasSpells };
+      return formatted;
     } else if (gameSystem === 'cosmere-rpg') {
       // Cosmere fields come pre-flattened from data-access.ts; pass them through.
       if (creature.tier !== undefined) formatted.tier = creature.tier;

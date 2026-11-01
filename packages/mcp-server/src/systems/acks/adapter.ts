@@ -185,6 +185,14 @@ export class AcksAdapter implements SystemAdapter {
     if (details.class) basicInfo.class = details.class;
     if (details.appearing) basicInfo.numberAppearing = details.appearing;
     if (details.treasure?.type) basicInfo.treasureType = details.treasure.type;
+    if (typeof details.biography === 'string' && details.biography.trim()) {
+      // ACKS keeps a single biography string (HTML); expose a short plain-text version.
+      basicInfo.biography = details.biography
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 1000);
+    }
     return basicInfo;
   }
 

@@ -100,3 +100,20 @@ test('ACKS: searchCharacterItems reports the spell level stored in lvl', async (
   assert.equal(byName['Augury'].spellClass, 'Divine');
   assert.ok(byName['Burning Hands'].duration, 'duration is exposed');
 });
+
+test('ACKS: updateActorBiography writes the single biography string', async () => {
+  // Real Foundry fills the ACKS schema defaults: biography is a plain string.
+  const r = await da.createActors({ actors: [{ name: 'Bio test', type: 'monster', system: { details: { biography: '' } } }] });
+  const res = await da.updateActorBiography({
+    actorIdentifier: 'Bio test',
+    biography: '<p>Un récit.</p>',
+    biographyField: 'value',
+  });
+  assert.equal(res.updatedPath, 'system.details.biography');
+  const actor = game.actors.get(r.created[0].id);
+  assert.equal(actor.system.details.biography, '<p>Un récit.</p>');
+  await assert.rejects(
+    () => da.updateActorBiography({ actorIdentifier: 'Bio test', biography: 'x', biographyField: 'public' }),
+    /single biography field/
+  );
+});
