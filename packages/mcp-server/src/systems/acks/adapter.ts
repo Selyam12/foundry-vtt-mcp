@@ -25,6 +25,33 @@ const AcksFiltersSchema = z
   })
   .passthrough();
 
+const FACTION_TYPE = 'acks-extras.faction';
+const DOMAIN_TYPE = 'acks-extras.domain';
+
+/** Plain-text version of an HTML field, truncated (these fields can hold whole book pages). */
+function plainText(html: unknown, max = 1000): string | undefined {
+  if (typeof html !== 'string' || !html.trim()) return undefined;
+  const text = html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+/** Drop empty values so the output stays compact. */
+function compact<T extends Record<string, any>>(obj: T): T {
+  for (const key of Object.keys(obj)) {
+    const v = obj[key];
+    if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) {
+      delete obj[key];
+    }
+  }
+  return obj;
+}
+
+const sumOf = (rows: any[] | undefined, key: string): number =>
+  (rows ?? []).reduce((total, row) => total + (Number(row?.[key]) || 0), 0);
+
 const SAVE_NAMES = ['death', 'paralysis', 'blast', 'spell', 'implements'] as const;
 
 export class AcksAdapter implements SystemAdapter {
@@ -122,6 +149,8 @@ export class AcksAdapter implements SystemAdapter {
   // ─── Character data (MCP server / Node.js context) ───────────────────────────
 
   extractCharacterStats(actorData: any): any {
+    if (actorData.type === FACTION_TYPE) return this.extractFactionStats(actorData.system || {});
+    if (actorData.type === DOMAIN_TYPE) return this.extractDomainStats(actorData.system || {});
     const system = actorData.system || {};
     const stats: any = {};
 
@@ -179,6 +208,8 @@ export class AcksAdapter implements SystemAdapter {
   }
 
   extractBasicInfo(actorData: any): any {
+    if (actorData.type === FACTION_TYPE) return this.extractFactionInfo(actorData);
+    if (actorData.type === DOMAIN_TYPE) return this.extractDomainInfo(actorData);
     const system = actorData.system || {};
     const details = system.details || {};
     const basicInfo: any = { actorType: actorData.type };
@@ -205,6 +236,100 @@ export class AcksAdapter implements SystemAdapter {
         .slice(0, 1000);
     }
     return basicInfo;
+  }
+
+  // ─── acks-extras: factions and domains ───────────────────────────────────────
+  // These actor types come from the acks-extras module, not the ACKS system. Their
+  // `system` holds the module's own data model, not hp/ac/saves.
+
+  private extractFactionInfo(actorData: any): any {
+    const system = actorData.system || {};
+    return compact({
+      actorType: actorData.type,
+      kind: system.kind,
+      seat: system.seatUuid,
+      leader: system.leaderUuid,
+      parent: system.parentUuid,
+      memberCount: (system.members ?? []).length,
+      holdingCount: (system.holdings ?? []).length,
+      relationCount: (system.relations ?? []).length,
+      controlledRegions: (system.controls ?? []).length,
+      notes: plainText(system.notes),
+      gmNotes: plainText(system.gmNotes),
+    });
+  }
+
+  private extractFactionStats(system: any): any {
+    const strength = system.strength ?? {};
+    return compact({
+      members: (system.members ?? []).map((m: any) =>
+        compact({ name: m.name, uuid: m.uuid, kind: m.kind, quantity: m.quantity, notes: m.notes })
+      ),
+      holdings: (system.holdings ?? []).map((h: any) =>
+        compact({ name: h.name, uuid: h.uuid, note: h.note })
+      ),
+      relations: (system.relations ?? []).map((r: any) =>
+        compact({ name: r.name, uuid: r.uuid, stance: r.stance, note: r.note, hidden: r.hidden })
+      ),
+      controls: system.controls,
+      standing: (system.standing ?? []).map((row: any) =>
+        compact({
+          subject: row.subject?.name || row.subject?.uuid,
+          scope: row.subject?.scope,
+          value: row.value,
+          reason: row.reason,
+          source: row.source,
+        })
+      ),
+      strength:
+        (strength.rows ?? []).length > 0
+          ? {
+              columns: (strength.columns ?? []).map((c: any) => c.label),
+              rows: strength.rows,
+              note: strength.note || undefined,
+            }
+          : undefined,
+    });
+  }
+
+  private extractDomainInfo(actorData: any): any {
+    const system = actorData.system || {};
+    return compact({
+      actorType: actorData.type,
+      title: system.title,
+      ruler: system.rulerName || system.rulerUuid,
+      liege: system.liegeName || system.parentUuid,
+      classification: system.classification,
+      alignment: system.alignment,
+      peasantFamilies: sumOf(system.territory, 'families'),
+      territoryRows: (system.territory ?? []).length,
+      morale: system.morale,
+      tributeGp: system.tributeGp,
+      notes: plainText(system.notes),
+      gmNotes: plainText(system.gmNotes),
+    });
+  }
+
+  private extractDomainStats(system: any): any {
+    const lines = (group: any) =>
+      Object.fromEntries(
+        Object.entries<any>(group ?? {}).filter(([, line]) =>
+          Object.values(line ?? {}).some(v => v !== null && v !== '' && v !== undefined)
+        )
+      );
+    return compact({
+      territory: system.territory,
+      holdings: system.holdings,
+      structures: system.structures,
+      strongholdCostGp: sumOf(system.structures, 'costGp') || undefined,
+      revenue: lines(system.revenue),
+      expenses: lines(system.expenses),
+      otherRevenue: system.otherRevenue,
+      otherExpenses: system.otherExpenses,
+      vassals: system.vassalRows,
+      favors: system.favors,
+      duties: system.duties,
+    });
   }
 
   describeActorSchema(): string {
@@ -239,6 +364,22 @@ export class AcksAdapter implements SystemAdapter {
       'weapon: damage.base.formula, range.short/medium/long, melee, missile, bonus.attack/damage',
       'armor:  type (unarmored|light|heavy|shield), ac.value',
       'spell:  lvl (1-6), class (Arcane|Divine|Mage), range, duration',
+      '',
+      'ACKS-EXTRAS MODULE ACTOR TYPES (only when the acks-extras module is active):',
+      '  acks-extras.faction  An organisation (guild, temple, noble house, watch)',
+      '    kind, notes, gmNotes (HTML), seatUuid, leaderUuid, parentUuid,',
+      '    members[] {uuid,name,kind,quantity,notes,hidden}, holdings[] {uuid,name,note,hidden},',
+      '    relations[] {uuid,name,stance,note,hidden}, standing[] {subject{scope,uuid,name},value,reason,time,source},',
+      '    strength {columns[{label}],rows[{level,label,counts[],revenue}],note}, controls[] (Region uuids)',
+      '  acks-extras.domain   A ruler domain (lord, liege, territory, holdings, finances)',
+      '    rulerUuid/rulerName, title, parentUuid/liegeName, classification, alignment, notes, gmNotes,',
+      '    territory[] {id,label,hexLabels[],count,families,landValue,improvement,note},',
+      '    holdings[] {uuid,name,role,families,marketClass,investmentGp,note},',
+      '    structures[] {id,name,count,ac,unitCapacity,shp,costGp}, revenue/expenses {line:{peasantPer,urbanPer,peasantGp,urbanGp,note}},',
+      '    tributeGp, morale {current,base}, vassalRows[], favors[], duties[]',
+      '  Also: acks-extras.location, party, group, animal, vehicle, template.',
+      '  CAUTION: update merges top-level keys only; an array (members, relations, standing...) is REPLACED,',
+      '  so send the whole array. Prefer acks-faction (add-member, add-relation...) for incremental edits.',
     ].join('\n');
   }
 }
