@@ -62,13 +62,14 @@ export class CharacterTools {
       {
         name: 'get-character',
         description:
-          'Retrieve character information optimized for minimal token usage. Returns: full stats (abilities, skills, saves, AC, HP), action names, active effects/conditions (name only), and ALL items with minimal metadata (name, type, equipped status) without descriptions. PF2e-specific: includes traits arrays for items/actions, action costs, rarity, and level. D&D 5e-specific: includes attunement status. Perfect for filtering (e.g., "deviant" trait feats, "fire" trait spells in PF2e), checking equipment, or identifying what to investigate further. Use get-character-entity to fetch full details for specific items, actions, spells, or effects.',
+          'Retrieve character information optimized for minimal token usage. Returns: full stats (abilities, skills, saves, AC, HP), action names, active effects/conditions (name only), and ALL items with minimal metadata (name, type, equipped status) without descriptions. PF2e-specific: includes traits arrays for items/actions, action costs, rarity, and level. D&D 5e-specific: includes attunement status. Perfect for filtering (e.g., "deviant" trait feats, "fire" trait spells in PF2e), checking equipment, or identifying what to investigate further. Use get-character-entity to fetch full details for specific items, actions, spells, or effects. For an unlinked token (e.g. a summon or a copy of a shared NPC) pass its token ID or token UUID to get that token\'s own effective stats and effects rather than the base actor\'s.',
         inputSchema: {
           type: 'object',
           properties: {
             identifier: {
               type: 'string',
-              description: 'Character name or ID to look up',
+              description:
+                "Character name or actor ID, or a token ID / token UUID (Scene.<id>.Token.<id>) to read an unlinked token's own state",
             },
           },
           required: ['identifier'],
@@ -145,7 +146,8 @@ export class CharacterTools {
         description:
           'Manage Item documents in Foundry VTT. Specify the operation with "action":\n' +
           '- "create": Create world-level Items in the sidebar (not actor-attached). Good for reusable libraries. GM-only.\n' +
-          '- "list": List world-level Items with optional type/folder/name filters.\n' +
+          '- "list": List world-level Items with optional type/folder/name filters. Returns names and ids only.\n' +
+          '- "get": Read one world-level Item in full (description, system data, rules) by itemIdentifier (id or exact name). GM-only.\n' +
           '- "update": Update existing world-level Items by ID. GM-only.\n' +
           '- "add-to-actor": Create and attach Items directly to an existing actor. GM-only.\n' +
           '- "remove-from-actor": Delete Items already on an actor, identified by itemIds and/or itemNames (optionally constrained by type). GM-only.\n' +
@@ -158,9 +160,17 @@ export class CharacterTools {
           properties: {
             action: {
               type: 'string',
-              enum: ['create', 'list', 'update', 'add-to-actor', 'remove-from-actor', 'describe'],
+              enum: [
+                'create',
+                'list',
+                'get',
+                'update',
+                'add-to-actor',
+                'remove-from-actor',
+                'describe',
+              ],
               description:
-                'Operation to perform: "create" world items, "list" world items, "update" world items by id, "add-to-actor" to attach items to an actor, "remove-from-actor" to delete items from an actor, or "describe" to get system-specific enum reference (mgt2e: weapon traits, scales, armour forms, hardware systems, etc.).',
+                'Operation to perform: "create" world items, "list" world items, "get" one world item in full, "update" world items by id, "add-to-actor" to attach items to an actor, "remove-from-actor" to delete items from an actor, or "describe" to get system-specific enum reference (mgt2e: weapon traits, scales, armour forms, hardware systems, etc.).',
             },
             items: {
               type: 'array',
@@ -228,6 +238,11 @@ export class CharacterTools {
             nameFilter: {
               type: 'string',
               description: 'For "list": case-insensitive substring match on item name.',
+            },
+            itemIdentifier: {
+              type: 'string',
+              description:
+                'For "get": id or exact name of the world Item to read. Use an id if several items share a name.',
             },
             actorIdentifier: {
               type: 'string',
@@ -593,6 +608,25 @@ export class CharacterTools {
     }
   }
 
+  async handleGetWorldItem(args: any): Promise<any> {
+    const { itemIdentifier } = z
+      .object({
+        itemIdentifier: z.string().trim().min(1, 'itemIdentifier is required for "get"'),
+      })
+      .parse(args);
+
+    this.logger.info('Getting world item', { itemIdentifier });
+
+    try {
+      return await this.foundryClient.query('foundry-mcp-bridge.getWorldItem', { itemIdentifier });
+    } catch (error) {
+      this.logger.error('Failed to get world item', error);
+      throw new Error(
+        `Failed to get world item "${itemIdentifier}": ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
   async handleCreateWorldItems(args: any): Promise<any> {
     const itemSchema = z.object({
       name: z.string().min(1, 'Item name cannot be empty'),
@@ -642,6 +676,7 @@ export class CharacterTools {
         action: z.enum([
           'create',
           'list',
+          'get',
           'update',
           'add-to-actor',
           'remove-from-actor',
@@ -655,6 +690,8 @@ export class CharacterTools {
         return this.handleCreateWorldItems(args);
       case 'list':
         return this.handleListWorldItems(args);
+      case 'get':
+        return this.handleGetWorldItem(args);
       case 'update':
         return this.handleUpdateWorldItems(args);
       case 'add-to-actor':
@@ -764,6 +801,10 @@ export class CharacterTools {
   private async formatCharacterResponse(characterData: any): Promise<any> {
     const response: any = {
       id: characterData.id,
+      actorId: characterData.actorId ?? characterData.id,
+      isToken: characterData.isToken ?? false,
+      ...(characterData.tokenId ? { tokenId: characterData.tokenId } : {}),
+      ...(characterData.sceneId ? { sceneId: characterData.sceneId } : {}),
       name: characterData.name,
       type: characterData.type,
       basicInfo: await this.extractBasicInfo(characterData),
