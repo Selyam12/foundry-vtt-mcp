@@ -117,3 +117,22 @@ test('ACKS: updateActorBiography writes the single biography string', async () =
     /single biography field/
   );
 });
+
+test('ACKS: createActorFromCompendiumEntry puts actors in the requested folder, default "Foundry MCP Creatures"', async () => {
+  const idx = await da.getEnhancedCreatureIndex();
+  const w = idx.find(c => c.name === 'Wight');
+  const folderNameOf = actorName => {
+    const actor = [...game.actors.values()].find(a => a.name === actorName);
+    return game.folders.get(actor._source.folder)?.name;
+  };
+
+  await da.createActorFromCompendiumEntry({ packId: w.pack, itemId: w.id, customNames: ['Wight dossier défaut'] });
+  assert.equal(folderNameOf('Wight dossier défaut'), 'Foundry MCP Creatures');
+
+  await da.createActorFromCompendiumEntry({ packId: w.pack, itemId: w.id, customNames: ['Wight dossier choisi'], folder: 'Mes morts-vivants' });
+  assert.equal(folderNameOf('Wight dossier choisi'), 'Mes morts-vivants');
+
+  // a blank folder name falls back to the default
+  await da.createActorFromCompendiumEntry({ packId: w.pack, itemId: w.id, customNames: ['Wight dossier vide'], folder: '   ' });
+  assert.equal(folderNameOf('Wight dossier vide'), 'Foundry MCP Creatures');
+});

@@ -230,12 +230,17 @@ interface WorldUser {
 }
 
 // Phase 2: Write Operation Interfaces
+/** Folder that receives actors created from compendium entries unless the caller names another. */
+const DEFAULT_CREATURE_FOLDER = 'Foundry MCP Creatures';
+
 interface ActorCreationRequest {
   creatureType: string;
   customNames?: string[] | undefined;
   packPreference?: string | undefined;
   quantity?: number | undefined;
   addToScene?: boolean | undefined;
+  /** Name of the actor folder to create the actors in (created if absent). */
+  folder?: string | undefined;
 }
 
 interface ActorCreationResult {
@@ -4191,7 +4196,7 @@ export class FoundryDataAccess {
             request.customNames?.[i] ||
             (quantity > 1 ? `${sourceDoc.name} ${i + 1}` : sourceDoc.name);
 
-          const newActor = await this.createActorFromSource(sourceDoc, customName);
+          const newActor = await this.createActorFromSource(sourceDoc, customName, request.folder);
 
           // Track actor creation for rollback
           transactionManager.addAction(
@@ -4297,6 +4302,7 @@ export class FoundryDataAccess {
     customNames: string[];
     quantity?: number;
     addToScene?: boolean;
+    folder?: string;
     placement?: {
       type: 'random' | 'grid' | 'center' | 'coordinates';
       coordinates?: { x: number; y: number }[];
@@ -4305,7 +4311,15 @@ export class FoundryDataAccess {
     this.validateFoundryState();
 
     try {
-      const { packId, itemId, customNames, quantity = 1, addToScene = false, placement } = request;
+      const {
+        packId,
+        itemId,
+        customNames,
+        quantity = 1,
+        addToScene = false,
+        placement,
+        folder,
+      } = request;
 
       // Validate inputs
       if (!packId || !itemId) {
@@ -4372,8 +4386,11 @@ export class FoundryDataAccess {
             actorData.prototypeToken.texture.src = null; // Clear remote URL
           }
 
-          // Organize created actors in a folder - use "Foundry MCP Creatures" for generic monsters
-          const folderId = await this.getOrCreateFolder('Foundry MCP Creatures', 'Actor');
+          // Organize created actors in a folder ("Foundry MCP Creatures" unless the caller names one)
+          const folderId = await this.getOrCreateFolder(
+            folder?.trim() || DEFAULT_CREATURE_FOLDER,
+            'Actor'
+          );
           if (folderId) {
             (actorData as any).folder = folderId;
           }
@@ -5197,7 +5214,8 @@ export class FoundryDataAccess {
    */
   private async createActorFromSource(
     sourceDoc: CompendiumEntryFull,
-    customName: string
+    customName: string,
+    folderName?: string
   ): Promise<any> {
     try {
       // Clone the source data
@@ -5223,8 +5241,11 @@ export class FoundryDataAccess {
       if (!actorData.name) actorData.name = customName;
       if (!actorData.type) actorData.type = sourceDoc.type || 'npc';
 
-      // Organize created actors in a folder - use "Foundry MCP Creatures" for generic monsters
-      const folderId = await this.getOrCreateFolder('Foundry MCP Creatures', 'Actor');
+      // Organize created actors in a folder ("Foundry MCP Creatures" unless the caller names one)
+      const folderId = await this.getOrCreateFolder(
+        folderName?.trim() || DEFAULT_CREATURE_FOLDER,
+        'Actor'
+      );
       if (folderId) {
         actorData.folder = folderId;
       }

@@ -54,6 +54,12 @@ export class ActorCreationTools {
               minimum: 1,
               maximum: 10,
             },
+            folder: {
+              type: 'string',
+              description:
+                'Name of the actor folder to put the created actors in (created if it does not exist). Defaults to "Foundry MCP Creatures".',
+              default: 'Foundry MCP Creatures',
+            },
             addToScene: {
               type: 'boolean',
               description: 'Whether to add created actors to the current scene as tokens',
@@ -120,6 +126,7 @@ export class ActorCreationTools {
       itemId: z.string().min(1, 'Item ID cannot be empty'),
       names: z.array(z.string().min(1)).min(1, 'At least one name is required'),
       quantity: z.number().min(1).max(10).optional(),
+      folder: z.string().trim().min(1).default('Foundry MCP Creatures'),
       addToScene: z.boolean().default(false),
       placement: z
         .object({
@@ -136,7 +143,7 @@ export class ActorCreationTools {
         .optional(),
     });
 
-    const { packId, itemId, names, quantity, addToScene, placement } = schema.parse(args);
+    const { packId, itemId, names, quantity, folder, addToScene, placement } = schema.parse(args);
     const finalQuantity = quantity || names.length;
 
     this.logger.info('Creating actors from specific compendium entry', {
@@ -163,6 +170,7 @@ export class ActorCreationTools {
           itemId,
           customNames: customNames.slice(0, finalQuantity),
           quantity: finalQuantity,
+          folder,
           addToScene,
           placement: placement
             ? {
