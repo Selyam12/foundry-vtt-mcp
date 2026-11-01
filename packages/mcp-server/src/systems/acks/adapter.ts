@@ -164,6 +164,17 @@ export class AcksAdapter implements SystemAdapter {
     const scores = system.scores ?? system.abilities;
     if (scores && typeof scores === 'object') stats.abilityScores = scores;
 
+    // Character-only data (adventuring throws, encumbrance, fate points, caster level)
+    if (system.adventuring && typeof system.adventuring === 'object') {
+      stats.adventuringThrows = system.adventuring;
+    }
+    if (system.encumbrance && typeof system.encumbrance === 'object') {
+      stats.encumbrance = system.encumbrance;
+    }
+    const details = system.details || {};
+    if (details.fatepoints) stats.fatePoints = details.fatepoints;
+    if (details.casterlevel) stats.casterLevel = details.casterlevel;
+
     return stats;
   }
 

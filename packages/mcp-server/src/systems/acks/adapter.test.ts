@@ -65,3 +65,52 @@ describe('AcksAdapter', () => {
     expect(adapter.describeActorSchema()).toContain('ACKS Actor Schema');
   });
 });
+
+// Shape of a real ACKS character (system schema v5), as created by Foundry.
+describe('AcksAdapter with a character', () => {
+  const adapter = new AcksAdapter();
+  const pc = {
+    type: 'character',
+    system: {
+      hp: { hd: '1d8', value: 4, max: 4, bhr: '1d3' },
+      ac: { value: 0, mod: 0 },
+      attack: { throw: 10, mod: { missile: 0, melee: 0 } },
+      saves: {
+        paralysis: { value: 13 },
+        death: { value: 14 },
+        blast: { value: 15 },
+        implements: { value: 16 },
+        spell: { value: 17 },
+      },
+      movement: { base: 120, mod: 0 },
+      spells: { '1': { max: 0 }, enabled: false },
+      scores: { str: { value: 10 }, int: { value: 10 }, wis: { value: 10 } },
+      adventuring: { dungeonbashing: 18, climb: 8, listening: 18, searching: 18, trapbreaking: 18 },
+      encumbrance: { max: 20, forcemax: -1 },
+      details: {
+        biography: '',
+        class: 'Fighter',
+        level: 3,
+        alignment: 'Neutral',
+        casterlevel: 0,
+        fatepoints: 1,
+        xp: { share: 100, next: 2000, value: 0, bonus: 0 },
+      },
+    },
+  };
+
+  it('extracts adventuring throws, encumbrance, fate points and scores', () => {
+    const stats = adapter.extractCharacterStats(pc);
+    expect(stats.adventuringThrows.trapbreaking).toBe(18);
+    expect(stats.encumbrance).toEqual({ max: 20, forcemax: -1 });
+    expect(stats.fatePoints).toBe(1);
+    expect(stats.casterLevel).toBeUndefined();
+    expect(stats.abilityScores.str.value).toBe(10);
+  });
+
+  it('reports class and level in basic info, keeping the xp object', () => {
+    const info = adapter.extractBasicInfo(pc);
+    expect(info).toMatchObject({ actorType: 'character', class: 'Fighter', level: 3 });
+    expect(info.xp).toEqual({ share: 100, next: 2000, value: 0, bonus: 0 });
+  });
+});
