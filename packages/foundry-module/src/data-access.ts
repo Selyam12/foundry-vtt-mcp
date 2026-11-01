@@ -1,6 +1,10 @@
 import { MODULE_ID, ERROR_MESSAGES, TOKEN_DISPOSITIONS } from './constants.js';
 import { permissionManager } from './permissions.js';
 import { transactionManager } from './transaction-manager.js';
+import type { CreatureIndexAdapter } from './system-adapter.js';
+import { getSystemAdapter } from './system-registry.js';
+import type { AcksCreatureIndex } from './system-acks.js';
+import type { DnD5eCreatureIndex } from './system-dnd5e.js';
 // Local type definitions to avoid shared package import issues
 interface CharacterInfo {
   id: string;
@@ -76,25 +80,6 @@ interface CompendiumSearchResult {
   description?: string;
 }
 
-// D&D 5e Enhanced Creature Index
-interface DnD5eCreatureIndex {
-  id: string;
-  name: string;
-  type: string;
-  pack: string;
-  packLabel: string;
-  challengeRating: number;
-  creatureType: string;
-  size: string;
-  hitPoints: number;
-  armorClass: number;
-  hasSpells: boolean;
-  hasLegendaryActions: boolean;
-  alignment: string;
-  description?: string;
-  img?: string;
-}
-
 // Pathfinder 2e Enhanced Creature Index
 interface PF2eCreatureIndex {
   id: string;
@@ -163,7 +148,8 @@ type EnhancedCreatureIndex =
   | DnD5eCreatureIndex
   | PF2eCreatureIndex
   | CosmereRpgCreatureIndex
-  | MGT2eCreatureIndex;
+  | MGT2eCreatureIndex
+  | AcksCreatureIndex; // TODO: derive from registered adapters
 
 interface PersistentIndexMetadata {
   version: string;
@@ -635,7 +621,15 @@ class PersistentCreatureIndex {
   private generatePackChecksum(pack: any): string {
     // Simple checksum based on pack metadata and size
     const data = `${pack.metadata.id}-${pack.metadata.label}-${pack.index?.size || 0}`;
-    return btoa(data).slice(0, 16); // Simple hash for demonstration
+    // btoa() throws on non-Latin1 characters (accented/CJK pack labels), so encode
+    // as UTF-8 bytes first. Latin1-only input yields the same value as before.
+    const isLatin1 = [...data].every(ch => ch.charCodeAt(0) <= 0xff);
+    let input = data;
+    if (!isLatin1) {
+      input = '';
+      for (const b of new TextEncoder().encode(data)) input += String.fromCharCode(b);
+    }
+    return btoa(input).slice(0, 16);
   }
 
   /**
@@ -661,371 +655,18 @@ class PersistentCreatureIndex {
     // Route to system-specific builder
     if (gameSystem === 'pf2e') {
       return await this.buildPF2eIndex(force);
-    } else if (gameSystem === 'dnd5e') {
-      return await this.buildDnD5eIndex(force);
     } else if (gameSystem === 'cosmere-rpg') {
       return await this.buildCosmereRpgIndex(force);
     } else if (gameSystem === 'mgt2e') {
       return await this.buildMGT2eIndex(force);
+    } else if (getSystemAdapter(gameSystem)?.creatures) {
+      return await this.buildAdapterIndex(getSystemAdapter(gameSystem)!.creatures!, gameSystem);
     } else {
       // Unknown system — skip silently rather than blocking world load
       console.warn(
         `[${this.moduleId}] Enhanced creature index not implemented for system: ${gameSystem}. Skipping.`
       );
       return [];
-    }
-  }
-
-  /**
-   * Build D&D 5e enhanced creature index
-   */
-  private async buildDnD5eIndex(_force = false): Promise<DnD5eCreatureIndex[]> {
-    this.buildInProgress = true;
-
-    const startTime = Date.now();
-    let progressNotification: any = null;
-    let totalErrors = 0; // Track extraction errors
-
-    try {
-      const actorPacks = Array.from(game.packs.values()).filter(
-        pack => pack.metadata.type === 'Actor'
-      );
-      const enhancedCreatures: DnD5eCreatureIndex[] = [];
-      const packFingerprints = new Map<string, PackFingerprint>();
-
-      // Show initial progress notification
-      this.info(`Starting enhanced creature index build from ${actorPacks.length} packs...`);
-
-      for (let i = 0; i < actorPacks.length; i++) {
-        const pack = actorPacks[i];
-        const progressPercent = Math.round((i / actorPacks.length) * 100);
-
-        // Update progress notification every few packs or for important packs
-        if (i % 3 === 0 || pack.metadata.label.toLowerCase().includes('monster')) {
-          if (progressNotification) {
-            progressNotification.remove();
-          }
-          progressNotification = this.info(
-            `Building creature index... ${progressPercent}% (${i + 1}/${actorPacks.length}) Processing: ${pack.metadata.label}`
-          );
-        }
-
-        try {
-          // Ensure pack index is loaded
-          if (!pack.indexed) {
-            await pack.getIndex({});
-          }
-
-          // Generate pack fingerprint for change detection
-          packFingerprints.set(pack.metadata.id, this.generatePackFingerprint(pack));
-
-          // Show pack processing details for large packs
-          const packSize = pack.index?.size || 0;
-          if (packSize > 50) {
-            if (progressNotification) {
-              progressNotification.remove();
-            }
-            progressNotification = this.info(
-              `Processing large pack: ${pack.metadata.label} (${packSize} documents)...`
-            );
-          }
-
-          // Process creatures in this pack
-          const packResult = await this.extractDnD5eDataFromPack(pack);
-          enhancedCreatures.push(...packResult.creatures);
-          totalErrors += packResult.errors;
-
-          // Pack processing completed: ${pack.metadata.label} - ${packResult.creatures.length} creatures extracted
-
-          // Show milestone notifications for significant progress
-          if (i === 0 || (i + 1) % 5 === 0 || i === actorPacks.length - 1) {
-            const totalCreaturesSoFar = enhancedCreatures.length;
-            if (progressNotification) {
-              progressNotification.remove();
-            }
-            progressNotification = this.info(
-              `Index Progress: ${i + 1}/${actorPacks.length} packs complete, ${totalCreaturesSoFar} creatures indexed`
-            );
-          }
-        } catch (error) {
-          console.warn(`[${this.moduleId}] Failed to process pack ${pack.metadata.label}:`, error);
-          // Show error notification for pack failures
-          ui.notifications?.warn(
-            `Warning: Failed to index pack "${pack.metadata.label}" - continuing with other packs`
-          );
-        }
-      }
-
-      // Clear progress notification and show final processing step
-      if (progressNotification) {
-        progressNotification.remove();
-      }
-      this.info(
-        `Saving enhanced index to world database... (${enhancedCreatures.length} creatures)`
-      );
-
-      // Create persistent index structure
-      const persistentIndex: PersistentEnhancedIndex = {
-        metadata: {
-          version: this.INDEX_VERSION,
-          timestamp: Date.now(),
-          packFingerprints,
-          totalCreatures: enhancedCreatures.length,
-          gameSystem: 'dnd5e', // Mark as D&D 5e index
-        },
-        creatures: enhancedCreatures,
-      };
-
-      // Save to world flags
-      await this.savePersistedIndex(persistentIndex);
-
-      const buildTimeSeconds = Math.round((Date.now() - startTime) / 1000);
-      const errorText = totalErrors > 0 ? ` (${totalErrors} extraction errors)` : '';
-      const successMessage = `Enhanced creature index complete! ${enhancedCreatures.length} creatures indexed from ${actorPacks.length} packs in ${buildTimeSeconds}s${errorText}`;
-
-      this.info(successMessage);
-
-      return enhancedCreatures;
-    } catch (error) {
-      // Clear any progress notifications on error
-      if (progressNotification) {
-        progressNotification.remove();
-      }
-
-      const errorMessage = `Failed to build enhanced creature index: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      console.error(`[${this.moduleId}] ${errorMessage}`);
-      ui.notifications?.error(errorMessage);
-
-      throw error;
-    } finally {
-      this.buildInProgress = false;
-
-      // Ensure progress notification is cleared
-      if (progressNotification) {
-        progressNotification.remove();
-      }
-    }
-  }
-
-  /**
-   * Extract D&D 5e data from all documents in a pack
-   */
-  private async extractDnD5eDataFromPack(
-    pack: any
-  ): Promise<{ creatures: DnD5eCreatureIndex[]; errors: number }> {
-    const creatures: DnD5eCreatureIndex[] = [];
-    let errors = 0;
-
-    try {
-      // Load all documents from pack
-      const documents = await pack.getDocuments();
-
-      for (const doc of documents) {
-        try {
-          // Only process NPCs, characters, and creatures
-          if (doc.type !== 'npc' && doc.type !== 'character' && doc.type !== 'creature') {
-            continue;
-          }
-
-          const result = this.extractDnD5eCreatureData(doc, pack);
-          if (result) {
-            creatures.push(result.creature);
-            errors += result.errors;
-          }
-        } catch (error) {
-          console.warn(
-            `[${this.moduleId}] Failed to extract data from ${doc.name} in ${pack.metadata.label}:`,
-            error
-          );
-          errors++;
-        }
-      }
-    } catch (error) {
-      console.warn(
-        `[${this.moduleId}] Failed to load documents from ${pack.metadata.label}:`,
-        error
-      );
-      errors++;
-    }
-
-    return { creatures, errors };
-  }
-
-  /**
-   * Extract D&D 5e creature data from a single document
-   */
-  private extractDnD5eCreatureData(
-    doc: any,
-    pack: any
-  ): { creature: DnD5eCreatureIndex; errors: number } | null {
-    try {
-      const system = doc.system || {};
-
-      // Extract challenge rating with comprehensive fallbacks
-      // Based on debug logs: system.details.cr contains the actual value
-      let challengeRating =
-        system.details?.cr ??
-        system.details?.cr?.value ??
-        system.cr?.value ??
-        system.cr ??
-        system.attributes?.cr?.value ??
-        system.attributes?.cr ??
-        system.challenge?.rating ??
-        system.challenge?.cr ??
-        0;
-
-      // Handle null values (spell effects, etc.)
-      if (challengeRating === null || challengeRating === undefined) {
-        challengeRating = 0;
-      }
-
-      if (typeof challengeRating === 'string') {
-        if (challengeRating === '1/8') challengeRating = 0.125;
-        else if (challengeRating === '1/4') challengeRating = 0.25;
-        else if (challengeRating === '1/2') challengeRating = 0.5;
-        else challengeRating = parseFloat(challengeRating) || 0;
-      }
-
-      // Ensure it's a number
-      challengeRating = Number(challengeRating) || 0;
-
-      // Extract creature type with proper type checking
-      // Based on debug logs: system.details.type.value contains the actual value
-      let creatureType =
-        system.details?.type?.value ??
-        system.details?.type ??
-        system.type?.value ??
-        system.type ??
-        system.race?.value ??
-        system.race ??
-        system.details?.race ??
-        'unknown';
-
-      // Handle null/undefined values properly
-      if (creatureType === null || creatureType === undefined || creatureType === '') {
-        creatureType = 'unknown';
-      }
-
-      // Ensure creatureType is a string before calling toLowerCase()
-      if (typeof creatureType !== 'string') {
-        creatureType = String(creatureType || 'unknown');
-      }
-
-      // Extract size with proper type checking
-      let size =
-        system.traits?.size?.value ||
-        system.traits?.size ||
-        system.size?.value ||
-        system.size ||
-        system.details?.size ||
-        'medium';
-
-      // Ensure size is a string
-      if (typeof size !== 'string') {
-        size = String(size || 'medium');
-      }
-
-      // Extract hit points with more fallbacks
-      const hitPoints =
-        system.attributes?.hp?.max ||
-        system.hp?.max ||
-        system.attributes?.hp?.value ||
-        system.hp?.value ||
-        system.health?.max ||
-        system.health?.value ||
-        0;
-
-      // Extract armor class with more fallbacks
-      const armorClass =
-        system.attributes?.ac?.value ||
-        system.ac?.value ||
-        system.attributes?.ac ||
-        system.ac ||
-        system.armor?.value ||
-        system.armor ||
-        10;
-
-      // Extract alignment with proper type checking
-      let alignment =
-        system.details?.alignment?.value ||
-        system.details?.alignment ||
-        system.alignment?.value ||
-        system.alignment ||
-        'unaligned';
-
-      // Ensure alignment is a string
-      if (typeof alignment !== 'string') {
-        alignment = String(alignment || 'unaligned');
-      }
-
-      // Check for spells with more comprehensive detection
-      const hasSpells = !!(
-        system.spells ||
-        system.attributes?.spellcasting ||
-        (system.details?.spellLevel && system.details.spellLevel > 0) ||
-        (system.resources?.spell && system.resources.spell.max > 0) ||
-        system.spellcasting ||
-        system.traits?.spellcasting ||
-        system.details?.spellcaster
-      );
-
-      // Check for legendary actions with more comprehensive detection
-      const hasLegendaryActions = !!(
-        system.resources?.legact ||
-        system.legendary ||
-        (system.resources?.legres && system.resources.legres.value > 0) ||
-        system.details?.legendary ||
-        system.traits?.legendary ||
-        (system.resources?.legendary && system.resources.legendary.max > 0)
-      );
-
-      // DEBUG: Log what we extracted for comparison
-
-      // Successful extraction
-      return {
-        creature: {
-          id: doc._id,
-          name: doc.name,
-          type: doc.type,
-          pack: pack.metadata.id,
-          packLabel: pack.metadata.label,
-          challengeRating,
-          creatureType: creatureType.toLowerCase(),
-          size: size.toLowerCase(),
-          hitPoints,
-          armorClass,
-          hasSpells,
-          hasLegendaryActions,
-          alignment: alignment.toLowerCase(),
-          description: doc.system?.details?.biography || doc.system?.description || '',
-          img: doc.img,
-        },
-        errors: 0,
-      };
-    } catch (error) {
-      console.warn(`[${this.moduleId}] Failed to extract enhanced data from ${doc.name}:`, error);
-
-      // Return a basic fallback record with error count instead of null to avoid losing creatures
-      return {
-        creature: {
-          id: doc._id,
-          name: doc.name,
-          type: doc.type,
-          pack: pack.metadata.id,
-          packLabel: pack.metadata.label,
-          challengeRating: 0,
-          creatureType: 'unknown',
-          size: 'medium',
-          hitPoints: 1,
-          armorClass: 10,
-          hasSpells: false,
-          hasLegendaryActions: false,
-          alignment: 'unaligned',
-          description: 'Data extraction failed',
-          img: doc.img || '',
-        },
-        errors: 1,
-      };
     }
   }
 
@@ -1273,6 +914,142 @@ class PersistentCreatureIndex {
         errors: 1,
       };
     }
+  }
+
+  /**
+   * Build the enhanced creature index for a system that provides a
+   * CreatureIndexAdapter (see system-adapter.ts).
+   */
+  private async buildAdapterIndex(
+    adapter: CreatureIndexAdapter,
+    gameSystem: string
+  ): Promise<EnhancedCreatureIndex[]> {
+    this.buildInProgress = true;
+
+    const startTime = Date.now();
+    let progressNotification: any = null;
+    let totalErrors = 0;
+
+    try {
+      const actorPacks = Array.from(game.packs.values()).filter(
+        pack => pack.metadata.type === 'Actor'
+      );
+      const enhancedCreatures: EnhancedCreatureIndex[] = [];
+      const packFingerprints = new Map<string, PackFingerprint>();
+
+      this.info(`Starting enhanced creature index build from ${actorPacks.length} packs...`);
+
+      for (let i = 0; i < actorPacks.length; i++) {
+        const pack = actorPacks[i];
+        const progressPercent = Math.round((i / actorPacks.length) * 100);
+
+        if (i % 3 === 0 || pack.metadata.label.toLowerCase().includes('monster')) {
+          if (progressNotification) progressNotification.remove();
+          progressNotification = this.info(
+            `Building creature index... ${progressPercent}% (${i + 1}/${actorPacks.length}) Processing: ${pack.metadata.label}`
+          );
+        }
+
+        try {
+          if (!pack.indexed) {
+            await pack.getIndex({});
+          }
+
+          packFingerprints.set(pack.metadata.id, this.generatePackFingerprint(pack));
+
+          const packSize = pack.index?.size || 0;
+          if (packSize > 50) {
+            if (progressNotification) progressNotification.remove();
+            progressNotification = this.info(
+              `Processing large pack: ${pack.metadata.label} (${packSize} documents)...`
+            );
+          }
+
+          const packResult = await this.extractAdapterDataFromPack(pack, adapter);
+          enhancedCreatures.push(...packResult.creatures);
+          totalErrors += packResult.errors;
+
+          if (i === 0 || (i + 1) % 5 === 0 || i === actorPacks.length - 1) {
+            if (progressNotification) progressNotification.remove();
+            progressNotification = this.info(
+              `Index Progress: ${i + 1}/${actorPacks.length} packs complete, ${enhancedCreatures.length} creatures indexed`
+            );
+          }
+        } catch (error) {
+          console.warn(`[${this.moduleId}] Failed to process pack ${pack.metadata.label}:`, error);
+          ui.notifications?.warn(
+            `Warning: Failed to index pack "${pack.metadata.label}" - continuing with other packs`
+          );
+        }
+      }
+
+      if (progressNotification) progressNotification.remove();
+      this.info(
+        `Saving enhanced index to world database... (${enhancedCreatures.length} creatures)`
+      );
+
+      const persistentIndex: PersistentEnhancedIndex = {
+        metadata: {
+          version: this.INDEX_VERSION,
+          timestamp: Date.now(),
+          packFingerprints,
+          totalCreatures: enhancedCreatures.length,
+          gameSystem,
+        },
+        creatures: enhancedCreatures,
+      };
+
+      await this.savePersistedIndex(persistentIndex);
+
+      const buildTimeSeconds = Math.round((Date.now() - startTime) / 1000);
+      const errorText = totalErrors > 0 ? ` (${totalErrors} extraction errors)` : '';
+      this.info(
+        `${adapter.label} creature index complete! ${enhancedCreatures.length} creatures indexed from ${actorPacks.length} packs in ${buildTimeSeconds}s${errorText}`
+      );
+
+      return enhancedCreatures;
+    } catch (error) {
+      if (progressNotification) progressNotification.remove();
+
+      const errorMessage = `Failed to build ${adapter.label} creature index: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error(`[${this.moduleId}] ${errorMessage}`);
+      ui.notifications?.error(errorMessage);
+
+      throw error;
+    } finally {
+      this.buildInProgress = false;
+      if (progressNotification) progressNotification.remove();
+    }
+  }
+
+  private async extractAdapterDataFromPack(
+    pack: any,
+    adapter: CreatureIndexAdapter
+  ): Promise<{ creatures: EnhancedCreatureIndex[]; errors: number }> {
+    const creatures: EnhancedCreatureIndex[] = [];
+    let errors = 0;
+
+    try {
+      const documents = await pack.getDocuments();
+      for (const doc of documents) {
+        if (!adapter.actorTypes.includes(doc.type)) continue;
+        try {
+          creatures.push(adapter.extract(doc, pack));
+        } catch (error) {
+          console.warn(
+            `[${this.moduleId}] Failed to extract data from ${doc.name} in ${pack.metadata.label}:`,
+            error
+          );
+          errors++;
+          // Keep the creature (with placeholder data) when the adapter provides a fallback.
+          if (adapter.fallback) creatures.push(adapter.fallback(doc, pack));
+        }
+      }
+    } catch {
+      errors++;
+    }
+
+    return { creatures, errors };
   }
 
   /**
@@ -1963,7 +1740,9 @@ export class FoundryDataAccess {
 
       // Spell-specific fields
       if (item.type === 'spell') {
-        result.level = itemSystem?.level?.value ?? itemSystem?.level ?? itemSystem?.rank ?? 0;
+        // ACKS stores the spell level in `lvl`, the other systems in level / rank.
+        result.level =
+          itemSystem?.level?.value ?? itemSystem?.level ?? itemSystem?.rank ?? itemSystem?.lvl ?? 0;
         const itemRaw = item._source?.system;
         result.prepared =
           itemSystem?.prepared ?? itemRaw?.preparation?.prepared ?? itemSystem?.location?.prepared;
@@ -1995,6 +1774,12 @@ export class FoundryDataAccess {
           if (itemSystem?.target?.value) result.target = itemSystem.target.value;
           const cn = itemSystem?.cn?.value;
           if (cn !== undefined && cn !== null) result.actionCost = `CN ${cn}`;
+        } else if (systemId === 'acks') {
+          // ACKS spells: free-text range / duration / save, class Arcane or Divine.
+          if (itemSystem?.range) result.range = itemSystem.range;
+          if (itemSystem?.duration) result.duration = itemSystem.duration;
+          if (itemSystem?.save) result.save = itemSystem.save;
+          if (itemSystem?.class) result.spellClass = itemSystem.class;
         }
 
         // Category filter for spells
@@ -3175,10 +2960,12 @@ export class FoundryDataAccess {
       // Sort by power level then name for consistent ordering (system-aware).
       // Power-level dial: tier (cosmere), level (pf2e), challengeRating (dnd5e).
       const powerLevel = (c: EnhancedCreatureIndex): number => {
+        const adapterCreatures = this.creatureAdapter(c);
+        if (adapterCreatures) return adapterCreatures.powerLevel(c);
         if ('hits' in c && 'hasPsionics' in c) return (c as MGT2eCreatureIndex).hits;
         if ('tier' in c) return (c as CosmereRpgCreatureIndex).tier;
         if ('level' in c) return (c as PF2eCreatureIndex).level;
-        return (c as DnD5eCreatureIndex).challengeRating;
+        return (c as any).challengeRating ?? 0;
       };
       filteredCreatures.sort((a, b) => {
         const powerA = powerLevel(a);
@@ -3197,6 +2984,7 @@ export class FoundryDataAccess {
         const isMGT2e = 'hits' in creature && 'hasPsionics' in creature;
         const isCosmere = !isMGT2e && 'tier' in creature;
         const isPF2e = !isMGT2e && !isCosmere && 'level' in creature;
+        const adapterCreatures = this.creatureAdapter(creature);
 
         const base = {
           id: creature.id,
@@ -3210,6 +2998,10 @@ export class FoundryDataAccess {
           size: (creature as any).size,
           hitPoints: (creature as any).hitPoints,
         };
+
+        if (adapterCreatures) {
+          return { ...base, ...adapterCreatures.toResult(creature) };
+        }
 
         if (isMGT2e) {
           const m = creature as MGT2eCreatureIndex;
@@ -3260,16 +3052,8 @@ export class FoundryDataAccess {
           };
         }
 
-        const d = creature as DnD5eCreatureIndex;
-        return {
-          ...base,
-          armorClass: d.armorClass,
-          hasSpells: d.hasSpells,
-          alignment: d.alignment,
-          summary: `CR ${d.challengeRating} ${d.creatureType} from ${d.packLabel}`,
-          challengeRating: d.challengeRating,
-          hasLegendaryActions: d.hasLegendaryActions,
-        };
+        // No adapter claims this entry: return the common fields only.
+        return base;
       });
 
       // Calculate pack distribution for summary
@@ -3321,7 +3105,14 @@ export class FoundryDataAccess {
    * `level`, dnd5e has `challengeRating`. Check cosmere first (tier is the
    * narrowest signal), then pf2e, then fall through to dnd5e.
    */
+  private creatureAdapter(creature: any): CreatureIndexAdapter | undefined {
+    const ca = getSystemAdapter((game as any).system?.id)?.creatures;
+    return ca && ca.owns(creature) ? ca : undefined;
+  }
+
   private passesEnhancedCriteria(creature: EnhancedCreatureIndex, criteria: any): boolean {
+    const adapterCreatures = this.creatureAdapter(creature);
+    if (adapterCreatures) return adapterCreatures.matches(creature, criteria);
     if ('hits' in creature && 'hasPsionics' in creature) {
       return this.passesMGT2eCriteria(creature as MGT2eCreatureIndex, criteria);
     }
@@ -3331,7 +3122,7 @@ export class FoundryDataAccess {
     if ('level' in creature) {
       return this.passesPF2eCriteria(creature, criteria);
     }
-    return this.passesDnD5eCriteria(creature, criteria);
+    return true; // entries owned by an adapter are filtered by the adapter
   }
 
   /**
@@ -3420,67 +3211,6 @@ export class FoundryDataAccess {
 
     if (criteria.deflectMin !== undefined && creature.deflect < criteria.deflectMin) {
       return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Check if D&D 5e creature passes all specified criteria
-   */
-  private passesDnD5eCriteria(
-    creature: DnD5eCreatureIndex,
-    criteria: {
-      challengeRating?: number | { min?: number; max?: number };
-      creatureType?: string;
-      size?: string;
-      hasSpells?: boolean;
-      hasLegendaryActions?: boolean;
-    }
-  ): boolean {
-    // Challenge Rating filter
-    if (criteria.challengeRating !== undefined) {
-      if (typeof criteria.challengeRating === 'number') {
-        if (creature.challengeRating !== criteria.challengeRating) {
-          return false;
-        }
-      } else if (typeof criteria.challengeRating === 'object') {
-        const { min, max } = criteria.challengeRating;
-        if (min !== undefined && creature.challengeRating < min) {
-          return false;
-        }
-        if (max !== undefined && creature.challengeRating > max) {
-          return false;
-        }
-      }
-    }
-
-    // Creature Type filter
-    if (criteria.creatureType) {
-      if (creature.creatureType.toLowerCase() !== criteria.creatureType.toLowerCase()) {
-        return false;
-      }
-    }
-
-    // Size filter
-    if (criteria.size) {
-      if (creature.size.toLowerCase() !== criteria.size.toLowerCase()) {
-        return false;
-      }
-    }
-
-    // Spellcaster filter
-    if (criteria.hasSpells !== undefined) {
-      if (creature.hasSpells !== criteria.hasSpells) {
-        return false;
-      }
-    }
-
-    // Legendary Actions filter
-    if (criteria.hasLegendaryActions !== undefined) {
-      if (creature.hasLegendaryActions !== criteria.hasLegendaryActions) {
-        return false;
-      }
     }
 
     return true;
@@ -4603,7 +4333,7 @@ export class FoundryDataAccess {
 
       // Validate actor type - support all common actor types including DSA5 creatures
       // and Cosmere RPG adversaries.
-      const validActorTypes = ['character', 'npc', 'creature', 'adversary'];
+      const validActorTypes = ['character', 'npc', 'creature', 'adversary', 'monster'];
       if (!validActorTypes.includes(sourceDocument.type)) {
         throw new Error(
           `Document "${itemId}" has unsupported actor type: ${sourceDocument.type}. Supported types: ${validActorTypes.join(', ')}`
@@ -5168,6 +4898,9 @@ export class FoundryDataAccess {
    */
   getSystemSchema(): Record<string, any> {
     const systemId = (game as any).system?.id ?? 'unknown';
+
+    const adapterSchema = getSystemAdapter(systemId)?.schema?.();
+    if (adapterSchema) return adapterSchema;
 
     if (systemId !== 'mgt2e') {
       return {
@@ -10726,8 +10459,11 @@ export class FoundryDataAccess {
   async addSpellsToActor(data: any): Promise<any> {
     this.validateFoundryState();
 
-    if ((game.system as any).id !== 'dnd5e') {
-      throw new Error('addSpellsToActor requires the dnd5e game system');
+    const importCfg = getSystemAdapter((game.system as any).id)?.compendiumImport?.spells;
+    if (!importCfg) {
+      throw new Error(
+        `addSpellsToActor is not available for the "${(game.system as any).id}" game system`
+      );
     }
 
     try {
@@ -10738,7 +10474,7 @@ export class FoundryDataAccess {
       }
 
       const spellNames: string[] = data.spellNames;
-      const compendiumPacks: string[] = data.compendiumPacks ?? ['dnd5e.spells'];
+      const compendiumPacks: string[] = data.compendiumPacks ?? importCfg.defaultPacks;
       const warnings: string[] = [];
 
       // ── Phase A: deduplicate input (case-insensitive) ─────────────────────
@@ -10796,7 +10532,7 @@ export class FoundryDataAccess {
       if (packMaps.length === 0) {
         throw new Error(
           'No valid compendium packs available — check the compendiumPacks parameter. ' +
-            'Valid pack IDs for D&D 5e: "dnd5e.spells" (2014) or "dnd5e.spells24" (2024).'
+            importCfg.packHint
         );
       }
 
@@ -10906,8 +10642,11 @@ export class FoundryDataAccess {
   async addFeaturesFromCompendium(data: any): Promise<any> {
     this.validateFoundryState();
 
-    if ((game.system as any).id !== 'dnd5e') {
-      throw new Error('addFeaturesFromCompendium requires the dnd5e game system');
+    const importCfg = getSystemAdapter((game.system as any).id)?.compendiumImport?.features;
+    if (!importCfg) {
+      throw new Error(
+        `addFeaturesFromCompendium is not available for the "${(game.system as any).id}" game system`
+      );
     }
 
     try {
@@ -10918,10 +10657,7 @@ export class FoundryDataAccess {
       }
 
       const featureNames: string[] = data.featureNames;
-      const compendiumPacks: string[] = data.compendiumPacks ?? [
-        'dnd5e.monsterfeatures',
-        'dnd5e.classfeatures',
-      ];
+      const compendiumPacks: string[] = data.compendiumPacks ?? importCfg.defaultPacks;
       const warnings: string[] = [];
 
       // ── Phase A: deduplicate input (case-insensitive) ─────────────────────
@@ -10979,9 +10715,7 @@ export class FoundryDataAccess {
       if (packMaps.length === 0) {
         throw new Error(
           'No valid compendium packs available — check the compendiumPacks parameter. ' +
-            'Valid pack IDs for D&D 5e: "dnd5e.monsterfeatures" or "dnd5e.classfeatures" (2014), ' +
-            '"dnd5e.monsterfeatures24" (2024 monster features). ' +
-            'Note: 2024 class features are embedded in class items and cannot be imported with this tool.'
+            importCfg.packHint
         );
       }
 
