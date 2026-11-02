@@ -27,6 +27,7 @@ const AcksFiltersSchema = z
 
 const FACTION_TYPE = 'acks-extras.faction';
 const DOMAIN_TYPE = 'acks-extras.domain';
+const LOCATION_TYPE = 'acks-extras.location';
 
 /** Plain-text version of an HTML field, truncated (these fields can hold whole book pages). */
 function plainText(html: unknown, max = 1000): string | undefined {
@@ -151,6 +152,7 @@ export class AcksAdapter implements SystemAdapter {
   extractCharacterStats(actorData: any): any {
     if (actorData.type === FACTION_TYPE) return this.extractFactionStats(actorData.system || {});
     if (actorData.type === DOMAIN_TYPE) return this.extractDomainStats(actorData.system || {});
+    if (actorData.type === LOCATION_TYPE) return this.extractLocationStats(actorData.system || {});
     const system = actorData.system || {};
     const stats: any = {};
 
@@ -210,6 +212,7 @@ export class AcksAdapter implements SystemAdapter {
   extractBasicInfo(actorData: any): any {
     if (actorData.type === FACTION_TYPE) return this.extractFactionInfo(actorData);
     if (actorData.type === DOMAIN_TYPE) return this.extractDomainInfo(actorData);
+    if (actorData.type === LOCATION_TYPE) return this.extractLocationInfo(actorData);
     const system = actorData.system || {};
     const details = system.details || {};
     const basicInfo: any = { actorType: actorData.type };
@@ -241,6 +244,53 @@ export class AcksAdapter implements SystemAdapter {
   // ─── acks-extras: factions and domains ───────────────────────────────────────
   // These actor types come from the acks-extras module, not the ACKS system. Their
   // `system` holds the module's own data model, not hp/ac/saves.
+
+  // ─── acks-extras: locations (places) ─────────────────────────────────────────
+
+  private extractLocationInfo(actorData: any): any {
+    const system = actorData.system || {};
+    const market = system.market;
+    return compact({
+      actorType: actorData.type,
+      region: system.region,
+      role: system.role,
+      parent: system.parentUuid,
+      scene: system.sceneUuid,
+      stackCount: system.stack?.count > 1 ? system.stack.count : undefined,
+      stackLabel: system.stack?.count > 1 ? system.stack.label : undefined,
+      rosterCount: (system.roster ?? []).length,
+      hasMarket: market != null,
+      notes: plainText(system.notes),
+      gmNotes: plainText(system.gmNotes),
+    });
+  }
+
+  private extractLocationStats(system: any): any {
+    const market = system.market;
+    return compact({
+      roster: (system.roster ?? []).map((r: any) =>
+        compact({
+          name: r.name,
+          uuid: r.uuid,
+          kind: r.kind,
+          quantity: r.quantity > 1 ? r.quantity : undefined,
+          notes: r.notes,
+        })
+      ),
+      market:
+        market == null
+          ? undefined
+          : compact({
+              classOverride: market.marketClassOverride,
+              urbanFamilies: market.urbanFamilies,
+              settlementAlignment: market.settlementAlignment,
+              tillTargetGp: market.tillTargetGp,
+              postings: (market.postings ?? []).length,
+              candidates: (market.candidates ?? []).length,
+              specialHires: (market.specialHires ?? []).length,
+            }),
+    });
+  }
 
   private extractFactionInfo(actorData: any): any {
     const system = actorData.system || {};
@@ -377,7 +427,11 @@ export class AcksAdapter implements SystemAdapter {
       '    holdings[] {uuid,name,role,families,marketClass,investmentGp,note},',
       '    structures[] {id,name,count,ac,unitCapacity,shp,costGp}, revenue/expenses {line:{peasantPer,urbanPer,peasantGp,urbanGp,note}},',
       '    tributeGp, morale {current,base}, vassalRows[], favors[], duties[]',
-      '  Also: acks-extras.location, party, group, animal, vehicle, template.',
+      '  acks-extras.location  A place (settlement, building, district, dungeon area)',
+      '    region, role ("" or gate), notes, gmNotes (HTML), parentUuid (the place it is inside),',
+      '    stack {count,label}, roster[] {uuid,name,kind,quantity,notes,hidden}, market (null, or recruitment/goods subtree)',
+      '    Prefer acks-location for edits.',
+      '  Also: acks-extras.party, group, animal, vehicle, template.',
       '  CAUTION: update merges top-level keys only; an array (members, relations, standing...) is REPLACED,',
       '  so send the whole array. Prefer acks-faction (add-member, add-relation...) for incremental edits.',
     ].join('\n');

@@ -243,3 +243,49 @@ describe('AcksAdapter - acks-extras faction and domain', () => {
     expect(stats.expenses).toEqual({});
   });
 });
+
+describe('AcksAdapter - acks-extras location', () => {
+  const adapter = new AcksAdapter();
+  const place = {
+    type: 'acks-extras.location',
+    system: {
+      region: 'Old District',
+      role: '',
+      parentUuid: 'Actor.P1',
+      notes: '<p>The <b>Emporium</b> is a plaza.</p>',
+      gmNotes: '',
+      stack: { count: 1, label: '' },
+      roster: [{ uuid: 'Actor.A1', name: 'Trader', kind: 'actor', quantity: 3, notes: '' }],
+      market: {
+        urbanFamilies: 500,
+        settlementAlignment: 'lawful',
+        postings: [{}],
+        candidates: [{}, {}],
+      },
+    },
+  };
+
+  it('summarises a place', () => {
+    expect(adapter.extractBasicInfo(place)).toEqual({
+      actorType: 'acks-extras.location',
+      region: 'Old District',
+      parent: 'Actor.P1',
+      rosterCount: 1,
+      hasMarket: true,
+      notes: 'The Emporium is a plaza.',
+    });
+  });
+
+  it('lists the roster and a market summary, and omits a missing market', () => {
+    const stats = adapter.extractCharacterStats(place);
+    expect(stats.roster).toEqual([
+      { name: 'Trader', uuid: 'Actor.A1', kind: 'actor', quantity: 3 },
+    ]);
+    expect(stats.market).toMatchObject({ urbanFamilies: 500, postings: 1, candidates: 2 });
+    const cave = adapter.extractCharacterStats({
+      type: 'acks-extras.location',
+      system: { market: null, roster: [] },
+    });
+    expect(cave).toEqual({});
+  });
+});
