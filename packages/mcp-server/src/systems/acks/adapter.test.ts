@@ -288,4 +288,11 @@ describe('AcksAdapter - acks-extras location', () => {
     });
     expect(cave).toEqual({});
   });
+  it('decodes HTML entities in notes', () => {
+    const info = adapter.extractBasicInfo({
+      type: 'acks-extras.location',
+      system: { gmNotes: '<p>Run by the &lt;Guild&gt; &amp; co</p>', roster: [] },
+    });
+    expect(info.gmNotes).toBe('Run by the <Guild> & co');
+  });
 });
